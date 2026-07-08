@@ -6,7 +6,7 @@ import plotly.express as px
 import os
 
 # 1. Konfigurasi Halaman (Harus di paling atas)
-st.set_page_config(page_title="VSD & Pump Dashboard", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Grafik Generator", page_icon="⚡", layout="wide")
 
 # Sembunyikan menu bawaan Streamlit agar terlihat lebih bersih (Opsional)
 st.markdown("""
