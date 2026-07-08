@@ -33,7 +33,7 @@ with st.sidebar:
     uploaded_file = st.file_uploader("Upload File .h5", type=['h5', 'hdf5'])
 
 # 3. AREA UTAMA (Main Page)
-st.title("📊 VSD & Pump Performance Dashboard")
+st.title("📊 Grafik Generator")
 st.markdown("---")
 
 if uploaded_file is not None:
