@@ -6,8 +6,8 @@ import plotly.express as px
 import os
 
 # Konfigurasi Halaman
-st.set_page_config(page_title="HDF5 Pump Analyzer", layout="wide")
-st.title("Aplikasi Analisa Kinerja Pompa & VSD (HDF5)")
+st.set_page_config(page_title="ESP Trend Viewer", layout="wide")
+st.title("ESP Trend Viewer ari H5 File")
 
 # Parameter yang ingin dipertahankan
 DESIRED_COLUMNS = [
