@@ -7,7 +7,7 @@ import os
 
 # Konfigurasi Halaman
 st.set_page_config(page_title="ESP Trend Viewer", layout="wide")
-st.title("ESP Trend Viewer ari H5 File")
+st.title("ESP Trend Viewer dari H5 File")
 
 # Parameter yang ingin dipertahankan
 DESIRED_COLUMNS = [
