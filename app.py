@@ -6,7 +6,7 @@ import plotly.express as px
 import os
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="VSD & Pump Dashboard", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Grafik Generator", page_icon="⚡", layout="wide")
 
 # Menyembunyikan menu, header, dan footer bawaan Streamlit
 st.markdown("""
@@ -32,11 +32,11 @@ DESIRED_COLUMNS = [
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2933/2933116.png", width=80) 
     st.title("⚙️ Control Panel")
-    st.write("Silakan unggah log data sumur di sini.")
+    st.write("Silakan unggah H5 File di sini.")
     uploaded_file = st.file_uploader("Upload File .h5", type=['h5', 'hdf5'])
 
 # --- 4. TAMPILAN UTAMA ---
-st.title("📊 VSD & Pump Performance Dashboard")
+st.title("📊 Grafik Generator")
 st.markdown("---")
 
 # Mengeluarkan TABS agar langsung terlihat dan bisa diklik sejak awal web dibuka
@@ -146,6 +146,6 @@ if uploaded_file is not None:
 else:
     # Tampilan di layar utama saat file belum di-upload
     with tab1:
-        st.info("👋 Belum ada data yang diproses. Silakan unggah file HDF5 di panel sebelah kiri.")
+        st.info("👋 Belum ada data yang diproses. Silakan unggah file H5 di panel sebelah kiri.")
     with tab2:
         st.info("👋 Tabel akan muncul di sini setelah Anda mengunggah data.")
