@@ -6,7 +6,7 @@ import plotly.express as px
 import os
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Grafik Generator", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="VSD & Pump Dashboard", page_icon="⚡", layout="wide")
 
 st.markdown("""
     <style>
@@ -19,11 +19,11 @@ st.markdown("""
 # --- 2. DAFTAR PARAMETER (MASTER LIST) ---
 DESIRED_COLUMNS = [
     'time', 'DHDischargePressure', 'DHDischargeTemperature', 'DHDifferentialPressure', 
-    'DHIntakePressure',  'DHIntakeTemp', 'DHMotorTemp', 'DHMotorYpoint', 
+    'DHIntakePressure', 'DHIntakeTemp', 'DHMotorTemp', 'DHMotorYpoint', 
     'DHVibration', 'DHVibrationAX1', 'DHVibrationAY1', 'DHVibrationAZ1', 'DHVibrationY', 'DHVibrationZ', 
     'DH Cf', 'DH Cz', 'VsdFreqOut', 'VsdAmps', 'VsdMotAmps', 'VSD Power In', 'VSD Power Out', 
     'VSD Volts In', 'VSD Volts Out', 'VSD Torque Percentage Live', 'VSDG7 Load', 'VSDG7 Speed Cmd WR', 
-    'Motor Load', 'Starts', 'Temperature', 'SupplyVolts', 'Drive Run Status', 
+    'Motor Load', 'Starts', 'Temperature', 'SupplyVolts', 'Drive Run Status', 'COS PHI Live',
     'Active Current Leakage', 'Passive Current Leakage'
 ]
 
@@ -31,11 +31,11 @@ DESIRED_COLUMNS = [
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2933/2933116.png", width=80) 
     st.title("⚙️ Control Panel")
-    st.write("Silakan unggah H5 File di sini.")
+    st.write("Silakan unggah log data sumur di sini.")
     uploaded_file = st.file_uploader("Upload File .h5", type=['h5', 'hdf5'])
 
 # --- 4. TAMPILAN UTAMA ---
-st.title("📊 Grafik Generator")
+st.title("📊 VSD & Pump Performance Dashboard")
 st.markdown("---")
 
 tab1, tab2 = st.tabs(["📈 Analisis Grafik Interaktif", "🗃️ Data Tabel & Download"])
@@ -59,12 +59,16 @@ if uploaded_file is not None:
                                 if 'time' in data.dtype.names and 'value' in data.dtype.names:
                                     df = pd.DataFrame(data)
                                     
+                                    # --- LOGIKA KONVERSI SATUAN ---
                                     if "Pressure" in tag_name:
+                                        # Konversi Pascal ke PSI
                                         df['value'] = df['value'] * 0.0001450377
                                         tag_name = tag_name + " (PSI)"
                                     elif "Temp" in tag_name or "Temperature" in tag_name:
-                                        df['value'] = df['value'] - 273.15
-                                        tag_name = tag_name + " (°C)"
+                                        # Konversi Kelvin ke Fahrenheit
+                                        df['value'] = (df['value'] - 273.15) * 9/5 + 32
+                                        tag_name = tag_name + " (°F)"
+                                    # ------------------------------
                                     
                                     df = df.rename(columns={'value': tag_name})
                                     df['time'] = pd.to_datetime(df['time'], unit='s')
@@ -77,13 +81,14 @@ if uploaded_file is not None:
                 
                 merged_df = merged_df.sort_values('time').reset_index(drop=True)
                 
+                # --- LOGIKA PENANGANAN KOLOM KOSONG ---
                 for col in DESIRED_COLUMNS:
                     if col == 'time': continue
                     target_col = col
                     if "Pressure" in col:
                         target_col = col + " (PSI)"
                     elif "Temp" in col or "Temperature" in col:
-                        target_col = col + " (°C)"
+                        target_col = col + " (°F)" # Diperbarui ke Fahrenheit
                         
                     if target_col not in merged_df.columns:
                         merged_df[target_col] = pd.NA
@@ -109,7 +114,6 @@ if uploaded_file is not None:
                     
                     st.write("") 
                     
-                    # --- FITUR BARU: TOGGLE NORMALISASI ---
                     mode_persentase = st.toggle("⚖️ Tampilkan Grafik dalam Skala Persentase (0-100%)", value=False, 
                                                 help="Aktifkan ini untuk membandingkan parameter yang nilainya jauh berbeda (misal: Frekuensi vs Tekanan).")
                     
@@ -120,11 +124,9 @@ if uploaded_file is not None:
                     )
                     
                     if parameter_pilihan:
-                        # Buat salinan data khusus untuk plot grafik (agar tabel asli tidak berubah)
                         df_plot = merged_df[['time'] + parameter_pilihan].copy()
                         
                         if mode_persentase:
-                            # Ubah nilai ke persentase berdasarkan nilai maksimumnya
                             for col in parameter_pilihan:
                                 max_val = df_plot[col].max()
                                 if pd.notna(max_val) and max_val != 0:
