@@ -28,7 +28,7 @@ DESIRED_COLUMNS = [
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2933/2933116.png", width=80) # Icon dummy
     st.title("⚙️ Control Panel")
-    st.write("Silakan unggah log data sumur di sini.")
+    st.write("Silakan unggah H5 File sumur di sini.")
     
     uploaded_file = st.file_uploader("Upload File .h5", type=['h5', 'hdf5'])
 
