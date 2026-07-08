@@ -19,11 +19,11 @@ st.markdown("""
 # --- 2. DAFTAR PARAMETER (MASTER LIST) ---
 DESIRED_COLUMNS = [
     'time', 'DHDischargePressure', 'DHDischargeTemperature', 'DHDifferentialPressure', 
-    'DHIntakePressure', 'DHIntakePressure2', 'DHIntakeTemp', 'DHMotorTemp', 'DHMotorYpoint', 
+    'DHIntakePressure',  'DHIntakeTemp', 'DHMotorTemp', 'DHMotorYpoint', 
     'DHVibration', 'DHVibrationAX1', 'DHVibrationAY1', 'DHVibrationAZ1', 'DHVibrationY', 'DHVibrationZ', 
     'DH Cf', 'DH Cz', 'VsdFreqOut', 'VsdAmps', 'VsdMotAmps', 'VSD Power In', 'VSD Power Out', 
     'VSD Volts In', 'VSD Volts Out', 'VSD Torque Percentage Live', 'VSDG7 Load', 'VSDG7 Speed Cmd WR', 
-    'Motor Load', 'Starts', 'Temperature', 'SupplyVolts', 'Drive Run Status', 'COS PHI Live',
+    'Motor Load', 'Starts', 'Temperature', 'SupplyVolts', 'Drive Run Status', 
     'Active Current Leakage', 'Passive Current Leakage'
 ]
 
