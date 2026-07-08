@@ -8,7 +8,7 @@ import os
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="VSD & Pump Dashboard", page_icon="⚡", layout="wide")
 
-# Menyembunyikan menu, header, dan footer bawaan Streamlit agar tampilan bersih
+# Menyembunyikan menu, header, dan footer bawaan Streamlit
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -39,7 +39,7 @@ with st.sidebar:
 st.title("📊 VSD & Pump Performance Dashboard")
 st.markdown("---")
 
-# Memindahkan TABS ke luar agar SELALU MUNCUL dan BISA DIKLIK sejak awal
+# Mengeluarkan TABS agar langsung terlihat dan bisa diklik sejak awal web dibuka
 tab1, tab2 = st.tabs(["📈 Analisis Grafik Interaktif", "🗃️ Data Tabel & Download"])
 
 if uploaded_file is not None:
@@ -80,7 +80,6 @@ if uploaded_file is not None:
                 
                 merged_df = merged_df.sort_values('time').reset_index(drop=True)
                 
-                # Memastikan semua parameter ada
                 for col in DESIRED_COLUMNS:
                     if col == 'time': continue
                     target_col = col
@@ -96,23 +95,25 @@ if uploaded_file is not None:
                 
                 # --- ISI DARI TAB 1 (GRAFIK) ---
                 with tab1:
-                    st.subheader("Ringkasan Nilai Maksimum")
-                    col1, col2, col3, col4 = st.columns(4)
                     
-                    with col1:
-                        max_freq = merged_df['VsdFreqOut'].max() if 'VsdFreqOut' in merged_df.columns and pd.notna(merged_df['VsdFreqOut'].max()) else 0
-                        st.metric(label="Max Frequency", value=f"{max_freq:.2f} Hz")
-                    with col2:
-                        max_amp = merged_df['VsdAmps'].max() if 'VsdAmps' in merged_df.columns and pd.notna(merged_df['VsdAmps'].max()) else 0
-                        st.metric(label="Max VSD Amps", value=f"{max_amp:.2f} A")
-                    with col3:
-                        max_volt = merged_df['VSD Volts Out'].max() if 'VSD Volts Out' in merged_df.columns and pd.notna(merged_df['VSD Volts Out'].max()) else 0
-                        st.metric(label="Max Volts Out", value=f"{max_volt:.2f} V")
-                    with col4:
-                        max_leak = merged_df['Active Current Leakage'].max() if 'Active Current Leakage' in merged_df.columns and pd.notna(merged_df['Active Current Leakage'].max()) else 0
-                        st.metric(label="Max Active Leakage", value=f"{max_leak:.2f} mA")
+                    # --- KPI DIBUAT KECIL (EXPANDER) ---
+                    with st.expander("🔍 Klik untuk melihat Ringkasan Nilai Maksimum (Opsional)", expanded=False):
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            max_freq = merged_df['VsdFreqOut'].max() if 'VsdFreqOut' in merged_df.columns and pd.notna(merged_df['VsdFreqOut'].max()) else 0
+                            st.metric(label="Max Frequency", value=f"{max_freq:.2f} Hz")
+                        with col2:
+                            max_amp = merged_df['VsdAmps'].max() if 'VsdAmps' in merged_df.columns and pd.notna(merged_df['VsdAmps'].max()) else 0
+                            st.metric(label="Max VSD Amps", value=f"{max_amp:.2f} A")
+                        with col3:
+                            max_volt = merged_df['VSD Volts Out'].max() if 'VSD Volts Out' in merged_df.columns and pd.notna(merged_df['VSD Volts Out'].max()) else 0
+                            st.metric(label="Max Volts Out", value=f"{max_volt:.2f} V")
+                        with col4:
+                            max_leak = merged_df['Active Current Leakage'].max() if 'Active Current Leakage' in merged_df.columns and pd.notna(merged_df['Active Current Leakage'].max()) else 0
+                            st.metric(label="Max Active Leakage", value=f"{max_leak:.2f} mA")
+                    # -----------------------------------
                     
-                    st.markdown("---")
+                    st.write("") # Memberi sedikit jarak
                     
                     parameter_pilihan = st.multiselect(
                         "Pilih parameter untuk di-plot (Bisa lebih dari 1):",
@@ -143,8 +144,8 @@ if uploaded_file is not None:
         finally:
             os.remove(tmp_path)
 else:
-    # Tampilan yang muncul di dalam Tab jika belum ada file yang diunggah
+    # Tampilan di layar utama saat file belum di-upload
     with tab1:
-        st.info("👋 Belum ada data. Silakan unggah file HDF5 di panel sebelah kiri untuk memunculkan grafik.")
+        st.info("👋 Belum ada data yang diproses. Silakan unggah file HDF5 di panel sebelah kiri.")
     with tab2:
-        st.info("👋 Belum ada data. Silakan unggah file HDF5 di panel sebelah kiri untuk memunculkan tabel.")
+        st.info("👋 Tabel akan muncul di sini setelah Anda mengunggah data.")
