@@ -8,7 +8,6 @@ import os
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="Grafik Generator", page_icon="⚡", layout="wide")
 
-# Menyembunyikan menu, header, dan footer bawaan Streamlit
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -39,7 +38,6 @@ with st.sidebar:
 st.title("📊 Grafik Generator")
 st.markdown("---")
 
-# Mengeluarkan TABS agar langsung terlihat dan bisa diklik sejak awal web dibuka
 tab1, tab2 = st.tabs(["📈 Analisis Grafik Interaktif", "🗃️ Data Tabel & Download"])
 
 if uploaded_file is not None:
@@ -61,7 +59,6 @@ if uploaded_file is not None:
                                 if 'time' in data.dtype.names and 'value' in data.dtype.names:
                                     df = pd.DataFrame(data)
                                     
-                                    # --- LOGIKA KONVERSI SATUAN ---
                                     if "Pressure" in tag_name:
                                         df['value'] = df['value'] * 0.0001450377
                                         tag_name = tag_name + " (PSI)"
@@ -95,8 +92,6 @@ if uploaded_file is not None:
                 
                 # --- ISI DARI TAB 1 (GRAFIK) ---
                 with tab1:
-                    
-                    # --- KPI DIBUAT KECIL (EXPANDER) ---
                     with st.expander("🔍 Klik untuk melihat Ringkasan Nilai Maksimum (Opsional)", expanded=False):
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
@@ -111,9 +106,12 @@ if uploaded_file is not None:
                         with col4:
                             max_leak = merged_df['Active Current Leakage'].max() if 'Active Current Leakage' in merged_df.columns and pd.notna(merged_df['Active Current Leakage'].max()) else 0
                             st.metric(label="Max Active Leakage", value=f"{max_leak:.2f} mA")
-                    # -----------------------------------
                     
-                    st.write("") # Memberi sedikit jarak
+                    st.write("") 
+                    
+                    # --- FITUR BARU: TOGGLE NORMALISASI ---
+                    mode_persentase = st.toggle("⚖️ Tampilkan Grafik dalam Skala Persentase (0-100%)", value=False, 
+                                                help="Aktifkan ini untuk membandingkan parameter yang nilainya jauh berbeda (misal: Frekuensi vs Tekanan).")
                     
                     parameter_pilihan = st.multiselect(
                         "Pilih parameter untuk di-plot (Bisa lebih dari 1):",
@@ -122,9 +120,25 @@ if uploaded_file is not None:
                     )
                     
                     if parameter_pilihan:
-                        fig = px.line(merged_df, x='time', y=parameter_pilihan, 
+                        # Buat salinan data khusus untuk plot grafik (agar tabel asli tidak berubah)
+                        df_plot = merged_df[['time'] + parameter_pilihan].copy()
+                        
+                        if mode_persentase:
+                            # Ubah nilai ke persentase berdasarkan nilai maksimumnya
+                            for col in parameter_pilihan:
+                                max_val = df_plot[col].max()
+                                if pd.notna(max_val) and max_val != 0:
+                                    df_plot[col] = (df_plot[col] / max_val) * 100
+                                else:
+                                    df_plot[col] = 0
+                            
+                            y_label = "Persentase dari Nilai Maksimum (%)"
+                        else:
+                            y_label = "Nilai Parameter"
+
+                        fig = px.line(df_plot, x='time', y=parameter_pilihan, 
                                       template="plotly_dark", 
-                                      labels={"value": "Nilai Parameter", "time": "Waktu"})
+                                      labels={"value": y_label, "time": "Waktu"})
                         fig.update_layout(legend_title_text='Parameter', hovermode="x unified")
                         st.plotly_chart(fig, use_container_width=True)
                 
@@ -144,7 +158,6 @@ if uploaded_file is not None:
         finally:
             os.remove(tmp_path)
 else:
-    # Tampilan di layar utama saat file belum di-upload
     with tab1:
         st.info("👋 Belum ada data yang diproses. Silakan unggah file H5 di panel sebelah kiri.")
     with tab2:
