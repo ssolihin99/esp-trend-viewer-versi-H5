@@ -8,10 +8,11 @@ import os
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="VSD & Pump Dashboard", page_icon="⚡", layout="wide")
 
-# Menyembunyikan menu bawaan Streamlit
+# Menyembunyikan menu, header, dan footer bawaan Streamlit agar tampilan bersih
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
     footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -38,6 +39,9 @@ with st.sidebar:
 st.title("📊 VSD & Pump Performance Dashboard")
 st.markdown("---")
 
+# Memindahkan TABS ke luar agar SELALU MUNCUL dan BISA DIKLIK sejak awal
+tab1, tab2 = st.tabs(["📈 Analisis Grafik Interaktif", "🗃️ Data Tabel & Download"])
+
 if uploaded_file is not None:
     with st.spinner("Mengekstrak, mengonversi satuan, dan memproses data... ⏳"):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".h5") as tmp:
@@ -59,11 +63,9 @@ if uploaded_file is not None:
                                     
                                     # --- LOGIKA KONVERSI SATUAN ---
                                     if "Pressure" in tag_name:
-                                        # Konversi Pascal ke PSI
                                         df['value'] = df['value'] * 0.0001450377
                                         tag_name = tag_name + " (PSI)"
                                     elif "Temp" in tag_name or "Temperature" in tag_name:
-                                        # Konversi Kelvin ke Celcius
                                         df['value'] = df['value'] - 273.15
                                         tag_name = tag_name + " (°C)"
                                     
@@ -72,55 +74,46 @@ if uploaded_file is not None:
                                     dfs.append(df)
             
             if dfs:
-                # Menggabungkan data
                 merged_df = dfs[0]
                 for df in dfs[1:]:
                     merged_df = pd.merge(merged_df, df, on='time', how='outer')
                 
                 merged_df = merged_df.sort_values('time').reset_index(drop=True)
                 
-                # --- LOGIKA PENANGANAN SENSOR RUSAK/KOSONG ---
-                # Memastikan semua parameter ada, meskipun sensornya mati
+                # Memastikan semua parameter ada
                 for col in DESIRED_COLUMNS:
                     if col == 'time': continue
-                    
-                    # Cek nama target yang seharusnya (karena mungkin sudah diubah namanya +satuan)
                     target_col = col
                     if "Pressure" in col:
                         target_col = col + " (PSI)"
                     elif "Temp" in col or "Temperature" in col:
                         target_col = col + " (°C)"
                         
-                    # Jika tidak ada, buat kolom kosong
                     if target_col not in merged_df.columns:
                         merged_df[target_col] = pd.NA
                 
-                # Merapikan celah kosong (Forward Fill & Backward Fill)
                 merged_df = merged_df.ffill().bfill()
                 
-                # --- 5. KARTU METRIK KPI ---
-                st.subheader("Ringkasan Nilai Maksimum (Berdasarkan Log)")
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    max_freq = merged_df['VsdFreqOut'].max() if 'VsdFreqOut' in merged_df.columns and pd.notna(merged_df['VsdFreqOut'].max()) else 0
-                    st.metric(label="Max Frequency", value=f"{max_freq:.2f} Hz")
-                with col2:
-                    max_amp = merged_df['VsdAmps'].max() if 'VsdAmps' in merged_df.columns and pd.notna(merged_df['VsdAmps'].max()) else 0
-                    st.metric(label="Max VSD Amps", value=f"{max_amp:.2f} A")
-                with col3:
-                    max_volt = merged_df['VSD Volts Out'].max() if 'VSD Volts Out' in merged_df.columns and pd.notna(merged_df['VSD Volts Out'].max()) else 0
-                    st.metric(label="Max Volts Out", value=f"{max_volt:.2f} V")
-                with col4:
-                    max_leak = merged_df['Active Current Leakage'].max() if 'Active Current Leakage' in merged_df.columns and pd.notna(merged_df['Active Current Leakage'].max()) else 0
-                    st.metric(label="Max Active Leakage", value=f"{max_leak:.2f} mA")
-                
-                st.markdown("---")
-
-                # --- 6. TABULASI (GRAFIK & TABEL) ---
-                tab1, tab2 = st.tabs(["📈 Analisis Grafik Interaktif", "🗃️ Data Tabel & Download"])
-                
+                # --- ISI DARI TAB 1 (GRAFIK) ---
                 with tab1:
+                    st.subheader("Ringkasan Nilai Maksimum")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        max_freq = merged_df['VsdFreqOut'].max() if 'VsdFreqOut' in merged_df.columns and pd.notna(merged_df['VsdFreqOut'].max()) else 0
+                        st.metric(label="Max Frequency", value=f"{max_freq:.2f} Hz")
+                    with col2:
+                        max_amp = merged_df['VsdAmps'].max() if 'VsdAmps' in merged_df.columns and pd.notna(merged_df['VsdAmps'].max()) else 0
+                        st.metric(label="Max VSD Amps", value=f"{max_amp:.2f} A")
+                    with col3:
+                        max_volt = merged_df['VSD Volts Out'].max() if 'VSD Volts Out' in merged_df.columns and pd.notna(merged_df['VSD Volts Out'].max()) else 0
+                        st.metric(label="Max Volts Out", value=f"{max_volt:.2f} V")
+                    with col4:
+                        max_leak = merged_df['Active Current Leakage'].max() if 'Active Current Leakage' in merged_df.columns and pd.notna(merged_df['Active Current Leakage'].max()) else 0
+                        st.metric(label="Max Active Leakage", value=f"{max_leak:.2f} mA")
+                    
+                    st.markdown("---")
+                    
                     parameter_pilihan = st.multiselect(
                         "Pilih parameter untuk di-plot (Bisa lebih dari 1):",
                         options=[col for col in merged_df.columns if col != 'time'],
@@ -134,6 +127,7 @@ if uploaded_file is not None:
                         fig.update_layout(legend_title_text='Parameter', hovermode="x unified")
                         st.plotly_chart(fig, use_container_width=True)
                 
+                # --- ISI DARI TAB 2 (TABEL) ---
                 with tab2:
                     st.dataframe(merged_df.head(500), use_container_width=True) 
                     csv = merged_df.to_csv(index=False).encode('utf-8')
@@ -149,4 +143,8 @@ if uploaded_file is not None:
         finally:
             os.remove(tmp_path)
 else:
-    st.info("👈 Silakan unggah file HDF5 melalui panel di sebelah kiri untuk memulai analisis.")
+    # Tampilan yang muncul di dalam Tab jika belum ada file yang diunggah
+    with tab1:
+        st.info("👋 Belum ada data. Silakan unggah file HDF5 di panel sebelah kiri untuk memunculkan grafik.")
+    with tab2:
+        st.info("👋 Belum ada data. Silakan unggah file HDF5 di panel sebelah kiri untuk memunculkan tabel.")
