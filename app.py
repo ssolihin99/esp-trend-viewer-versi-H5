@@ -118,4 +118,4 @@ if uploaded_file is not None:
             os.remove(tmp_path)
 else:
     # Tampilan kosong saat belum ada file yang diunggah
-    st.info("👈 Silakan unggah file HDF5 melalui panel di sebelah kiri untuk memulai analisis.")
+    st.info("👈 Silakan unggah file H5 melalui panel di sebelah kiri untuk memulai analisis.")
