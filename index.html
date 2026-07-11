@@ -1,847 +1,481 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESP Diagnosa H5 — Instruct Fault Signature Analyzer</title>
+<title>ESP Trend Viewer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.2.0/chartjs-plugin-zoom.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 <style>
-/* ============================================================
-   Design tokens — tema instrumentasi / control-room surveillance
-   ============================================================ */
 :root{
-  --bg:#0C1116;            /* layar SCADA gelap */
-  --panel:#141B22;
-  --panel-2:#101820;
-  --line:#223041;
-  --text:#D7E1EA;
-  --dim:#7A8CA0;
-  --amber:#FFB020;         /* readout display VSD */
-  --ok:#35D07F;
-  --danger:#FF5A52;
-  --cyan:#57C7FF;
-  --violet:#B48CFF;
-  --mono:'IBM Plex Mono',ui-monospace,monospace;
-  --sans:'IBM Plex Sans',system-ui,sans-serif;
-  --disp:'IBM Plex Sans Condensed',var(--sans);
+  --bg:#0E1620; --bg2:#131E2B; --panel:#18242F; --panel2:#1D2C3A;
+  --line:#26384A; --line2:#324A61; --ink:#E6EDF3; --muted:#8A9BA8; --faint:#5C6F7E;
+  --amber:#F2A93B; --teal:#3FB6A8; --crit:#E5544B;
+  --shadow:0 8px 30px rgba(0,0,0,.35);
+  --mono:'JetBrains Mono',monospace; --disp:'Space Grotesk',sans-serif; --body:'Inter',sans-serif;
 }
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.55}
-body{min-height:100vh}
-a{color:var(--cyan)}
-.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
-
-/* ---------- header ---------- */
-header.app{
-  border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg,#101820 0%,#0C1116 100%);
-  position:sticky;top:0;z-index:20;
-}
-.app-bar{max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.app-mark{
-  font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.12em;
-  color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:4px 8px;
-}
-h1{font-family:var(--disp);font-weight:700;font-size:20px;letter-spacing:.02em}
-.app-sub{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-left:auto}
-.lang-sw{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.lang-sw button{
-  background:transparent;border:0;color:var(--dim);font-family:var(--mono);font-size:12px;
-  padding:5px 12px;cursor:pointer;
-}
-.lang-sw button.on{background:var(--amber);color:#111}
-.lang-sw button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
-
-/* ---------- toolbar / dropzone ---------- */
-.toolbar{display:grid;grid-template-columns:1fr auto;gap:16px;margin:26px 0 18px;align-items:stretch}
-@media(max-width:760px){.toolbar{grid-template-columns:1fr}}
-.dropzone{
-  border:1.5px dashed var(--line);border-radius:10px;background:var(--panel-2);
-  padding:26px 22px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;
-}
-.dropzone:hover,.dropzone.drag{border-color:var(--amber);background:#151E27}
-.dropzone .dz-title{font-family:var(--disp);font-weight:600;font-size:17px}
-.dropzone .dz-hint{color:var(--dim);font-size:13px;margin-top:4px}
-.dropzone .dz-file{font-family:var(--mono);font-size:13px;color:var(--amber);margin-top:8px;word-break:break-all}
-.controls{display:flex;flex-direction:column;gap:10px;justify-content:center;min-width:220px}
-.controls label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
-.controls select{
-  background:var(--panel);border:1px solid var(--line);color:var(--text);
-  font-family:var(--mono);font-size:13px;border-radius:6px;padding:8px 10px;width:100%;
-}
-.controls select:focus-visible{outline:2px solid var(--cyan)}
-
-/* ---------- status / error ---------- */
-.status{font-family:var(--mono);font-size:13px;color:var(--dim);padding:10px 0;min-height:38px}
-.status .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--amber);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}
-@keyframes sp{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.status .spin{animation:none}}
-.err{
-  border:1px solid var(--danger);border-left-width:4px;border-radius:8px;
-  background:#1A1114;padding:14px 16px;margin:14px 0;font-size:14px;
-}
-.err b{color:var(--danger)}
-.err code{font-family:var(--mono);background:#0C1116;padding:1px 6px;border-radius:4px}
-
-/* ---------- annunciator strip (elemen tanda tangan) ---------- */
-.annunciator{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;margin:8px 0 26px}
-.ann{
-  background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:10px 12px;position:relative;overflow:hidden;
-}
-.ann::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
-.ann.up::before{background:var(--cyan)} .ann.down::before{background:var(--violet)}
-.ann.alarm::before{background:var(--danger)}
-.ann .tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim)}
-.ann .glyph{font-family:var(--mono);font-weight:600;font-size:22px;line-height:1.15}
-.ann .dpct{font-family:var(--mono);font-size:12px;color:var(--dim)}
-.ann .sigch{
-  display:inline-block;margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
-  border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--amber);text-transform:uppercase;
-}
-
-/* ---------- kartu diagnosa ---------- */
-section h2{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:26px 0 10px}
-.diag-top{
-  background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
-  border-radius:10px;padding:18px 20px;
-}
-.diag-top .dt-id{font-family:var(--mono);font-size:12px;color:var(--amber);letter-spacing:.1em}
-.diag-top .dt-name{font-family:var(--disp);font-weight:700;font-size:26px;margin:2px 0 8px}
-.scorebar{display:flex;align-items:center;gap:12px}
-.scorebar .bar{flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden}
-.scorebar .bar i{display:block;height:100%;background:var(--amber)}
-.scorebar .val{font-family:var(--mono);font-weight:600;font-size:20px;color:var(--amber);min-width:64px;text-align:right}
-.badges{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-.badge{font-family:var(--mono);font-size:11px;letter-spacing:.06em;border-radius:4px;padding:3px 9px;border:1px solid var(--line);color:var(--dim)}
-.badge.warn{border-color:var(--amber);color:var(--amber)}
-.badge.trip{border-color:var(--danger);color:var(--danger)}
-.cands{margin-top:10px;display:flex;flex-direction:column;gap:6px}
-.cand{
-  display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);
-  border-radius:8px;padding:9px 14px;font-size:14px;
-}
-.cand .c-id{font-family:var(--mono);font-size:11.5px;color:var(--dim);min-width:64px}
-.cand .c-pct{font-family:var(--mono);margin-left:auto;color:var(--text)}
-.cand .c-gate{font-family:var(--mono);font-size:11px;color:var(--danger)}
-.note{border:1px solid var(--line);border-left:4px solid var(--cyan);background:var(--panel-2);border-radius:8px;padding:10px 14px;font-size:13.5px;margin-top:8px;color:var(--dim)}
-
-/* ---------- bukti ---------- */
-table.evid{width:100%;border-collapse:collapse;font-size:13.5px}
-table.evid th{
-  text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);
-  text-transform:uppercase;border-bottom:1px solid var(--line);padding:7px 10px;
-}
-table.evid td{border-bottom:1px solid #1A2430;padding:7px 10px;font-family:var(--mono);font-size:13px}
-table.evid td.p{color:var(--text)} 
-table.evid .ok{color:var(--ok)} table.evid .part{color:var(--amber)} table.evid .no{color:var(--danger)}
-.prose{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 18px;font-size:14.5px}
-.prose+.prose{margin-top:10px}
-.prose b{font-family:var(--disp);letter-spacing:.04em}
-
-/* ---------- grafik ---------- */
-.chart-tools{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-.chart-tools label{font-family:var(--mono);font-size:12px;color:var(--dim)}
-.chip-row{display:flex;gap:6px;flex-wrap:wrap}
-.chip{
-  font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:14px;
-  background:transparent;color:var(--dim);padding:4px 12px;cursor:pointer;
-}
-.chip.on{border-color:var(--amber);color:var(--amber)}
-.chip:focus-visible{outline:2px solid var(--cyan)}
-.chart-cell{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px 6px;margin-bottom:10px}
-.chart-cell .cc-title{font-family:var(--mono);font-size:12px;color:var(--dim);margin-bottom:4px}
-.chart-cell canvas{width:100%!important;height:340px!important}
-.chart-cell.tall canvas{height:640px!important}
-.zoom-hint{font-family:var(--mono);font-size:11px;color:var(--dim);margin:2px 0 10px}
-
-/* ---------- export ---------- */
-.btn{
-  font-family:var(--mono);font-size:13px;background:var(--amber);color:#131313;border:0;
-  border-radius:6px;padding:9px 16px;cursor:pointer;font-weight:600;
-}
-.btn.ghost{background:transparent;color:var(--amber);border:1px solid var(--amber)}
-.btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
-.hidden{display:none!important}
-footer{color:var(--dim);font-family:var(--mono);font-size:11.5px;border-top:1px solid var(--line);margin-top:44px;padding-top:14px}
-.watermark{
-  position:fixed;right:10px;bottom:8px;z-index:50;pointer-events:none;
-  font-family:var(--mono);font-size:10px;letter-spacing:.05em;
-  color:var(--dim);opacity:.45;user-select:none;
-}
+*{box-sizing:border-box} html,body{margin:0;background:
+  radial-gradient(1200px 600px at 80% -10%, #17293a 0%, transparent 60%),
+  radial-gradient(900px 500px at -10% 20%, #14202e 0%, transparent 55%), var(--bg);
+  color:var(--ink); font-family:var(--body); line-height:1.5; -webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px; margin:0 auto; padding:26px 20px 80px}
+header{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:24px}
+.brand{display:flex; align-items:center; gap:14px}
+.mark{width:46px;height:46px;flex:none;border:1px solid var(--line2);border-radius:10px;display:grid;place-items:center;background:linear-gradient(160deg,#1c2c3b,#141f2b)}
+h1{font-family:var(--disp); font-weight:700; font-size:22px; letter-spacing:-.01em; margin:0}
+.sub{color:var(--muted); font-size:12.5px; margin-top:2px; font-family:var(--mono); letter-spacing:.02em}
+.head-right{display:flex; flex-direction:column; align-items:flex-end; gap:10px}
+.lang{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden}
+.lang button{background:transparent; color:var(--muted); border:none; padding:6px 13px; font-family:var(--mono); font-size:12px; cursor:pointer}
+.lang button.on{background:var(--amber); color:#10202b; font-weight:700}
+.status{font-family:var(--mono); font-size:11.5px; text-align:right; color:var(--muted)}
+.status b{color:var(--teal)} .status .bad{color:var(--crit)}
+.panel{background:linear-gradient(180deg,var(--panel),var(--bg2)); border:1px solid var(--line); border-radius:14px; padding:22px; box-shadow:var(--shadow)}
+.eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin:0 0 10px}
+.drop{border:1.5px dashed var(--line2); border-radius:12px; padding:20px 18px; text-align:center; cursor:pointer; transition:.18s; background:rgba(255,255,255,.012)}
+.drop:hover,.drop.hot{border-color:var(--amber); background:rgba(242,169,59,.06)}
+.drop h3{font-family:var(--disp); margin:6px 0 3px; font-size:15px}
+.drop p{color:var(--muted); font-size:12px; margin:0}
+.drop .ic{font-size:22px; color:var(--amber)}
+.hint{color:var(--faint); font-size:11px; font-family:var(--mono); margin-top:9px}
+/* compact state setelah file dimuat */
+.drop.compact{display:flex; align-items:center; justify-content:center; gap:10px; padding:11px 16px}
+.drop.compact .ic{font-size:16px; margin:0}
+.drop.compact h3{margin:0; font-size:13px}
+.drop.compact p, .drop.compact .hint{display:none}
+.err{color:var(--crit); font-family:var(--mono); font-size:12.5px; margin-top:12px}
+.result{margin-top:20px; display:none}
+.ctrls{display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px}
+.picker{margin-bottom:14px}
+.picker .ph{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; flex-wrap:wrap}
+.picker .pt{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+.quicks{display:flex; gap:6px}
+.quick{font-family:var(--mono); font-size:10.5px; color:var(--muted); background:transparent; border:1px solid var(--line); border-radius:6px; padding:3px 9px; cursor:pointer}
+.quick:hover{color:var(--ink); border-color:var(--line2)}
+.chips{display:flex; flex-wrap:wrap; gap:7px}
+.chip{display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border:1px solid var(--line); border-radius:20px; font-family:var(--mono); font-size:12px; color:var(--muted); cursor:pointer; user-select:none; transition:.12s}
+.chip.on{color:var(--ink); border-color:var(--line2); background:var(--panel2)}
+.chip.off{opacity:.4}
+.chip .cdot{width:9px; height:9px; border-radius:50%; flex:none}
+.chip.off .cdot{background:var(--faint)!important}
+.chart-hint{font-size:11px;color:var(--faint);font-family:var(--mono)}
+.btns{display:flex; gap:8px}
+.btn{font-family:var(--disp); font-weight:600; font-size:12.5px; padding:7px 14px; border-radius:8px; cursor:pointer; border:1px solid var(--line); background:transparent; color:var(--muted)}
+.btn:hover{color:var(--ink); border-color:var(--line2)}
+.btn.amber{background:var(--amber); color:#10202b; border-color:var(--amber)}
+.sec{margin-top:22px} .sec h4{font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin:0 0 10px}
+.sechead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px}
+.sechead h4{margin:0}
+.toggle{font-family:var(--mono); font-size:11px; color:var(--muted); background:transparent; border:1px solid var(--line); border-radius:7px; padding:4px 11px; cursor:pointer; display:inline-flex; align-items:center; gap:6px}
+.toggle:hover{color:var(--ink); border-color:var(--line2)}
+.toggle .cv{transition:transform .18s} .toggle.closed .cv{transform:rotate(-90deg)}
+#statsBody.hidden{display:none}
+table{width:100%; border-collapse:collapse; font-size:12.5px}
+th,td{text-align:right; padding:7px 10px; border-bottom:1px solid rgba(38,56,74,.6)}
+th{font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; color:var(--faint); text-transform:uppercase; font-weight:500}
+td:first-child,th:first-child{text-align:left}
+td.pname{font-family:var(--mono); font-weight:600}
+td.num{font-family:var(--mono); color:var(--muted)}
+td.delta.up{color:var(--amber)} td.delta.down{color:#4FB0C6}
+.dotc{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:7px;vertical-align:middle}
+.foot{color:var(--faint); font-size:11px; font-family:var(--mono); text-align:center; margin-top:34px}
+.hidden{display:none}
+canvas{margin-top:4px}
 </style>
 </head>
 <body>
-
-<header class="app">
-  <div class="app-bar">
-    <span class="app-mark">ESP·H5</span>
-    <h1 data-i18n="title">ESP Diagnosa H5</h1>
-    <span class="app-sub" id="sigVer">signatures.json …</span>
-    <div class="lang-sw" role="group" aria-label="Language">
-      <button id="langId" class="on">ID</button>
-      <button id="langEn">EN</button>
-    </div>
-  </div>
-</header>
-
 <div class="wrap">
-
-  <!-- toolbar -->
-  <div class="toolbar">
-    <div class="dropzone" id="dropzone" tabindex="0" role="button">
-      <div class="dz-title" data-i18n="dzTitle">Tarik & letakkan file Instruct .h5 di sini</div>
-      <div class="dz-hint" data-i18n="dzHint">atau klik untuk memilih file — diproses sepenuhnya di browser, tidak diunggah ke mana pun</div>
-      <div class="dz-file" id="dzFile"></div>
-      <input type="file" id="fileInput" accept=".h5,.hdf5" class="hidden">
-    </div>
-    <div class="controls">
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+          <path d="M3 20h18" stroke="#3FB6A8" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M3 20V4" stroke="#3FB6A8" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M5 15l4-5 3 3 5-7" stroke="#F2A93B" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="20" cy="6" r="1.5" fill="#F2A93B"/>
+        </svg>
+      </div>
       <div>
-        <label for="winSel" data-i18n="winLabel">Jendela analisa</label>
-        <select id="winSel">
-          <option value="all" data-i18n="winAll">Seluruh data</option>
-          <option value="72">72 jam terakhir</option>
-          <option value="24">24 jam terakhir</option>
-          <option value="12">12 jam terakhir</option>
-        </select>
+        <h1 id="t-title">ESP Trend Viewer</h1>
+        <div class="sub" id="t-sub">interactive parameter charts · SCADA &amp; Starview CSV</div>
       </div>
     </div>
-  </div>
-
-  <div class="status" id="status"></div>
-  <div id="errBox"></div>
-
-  <!-- hasil -->
-  <div id="results" class="hidden">
-
-    <section>
-      <h2 data-i18n="hAnn">Panel parameter</h2>
-      <div class="annunciator" id="annunciator"></div>
-    </section>
-
-    <section>
-      <h2 data-i18n="hDiag">Diagnosa</h2>
-      <div class="diag-top" id="diagTop"></div>
-      <div class="cands" id="cands"></div>
-      <div id="gateNotes"></div>
-    </section>
-
-    <section>
-      <h2 data-i18n="hEvid">Bukti per parameter</h2>
-      <div class="prose" style="padding:0;overflow-x:auto">
-        <table class="evid" id="evidTable"></table>
+    <div class="head-right">
+      <div class="lang" id="langToggle">
+        <button data-lang="en" class="on">EN</button>
+        <button data-lang="id">ID</button>
       </div>
-    </section>
+      <div class="status" id="status"></div>
+    </div>
+  </header>
 
-    <section>
-      <h2 data-i18n="hInterp">Interpretasi & rekomendasi</h2>
-      <div class="prose" id="narasi"></div>
-      <div class="prose" id="rekom"></div>
-    </section>
+  <section class="panel">
+    <p class="eyebrow" id="t-eyebrow">Data source · sensor time-series</p>
+    <div class="drop" id="drop">
+      <div class="ic">↧</div>
+      <h3 id="t-droptitle">Drop your CSV here</h3>
+      <p id="t-dropsub">or click to choose · SCADA-flat &amp; Starview formats auto-detected</p>
+      <input type="file" id="file" accept=".csv" class="hidden">
+      <div class="hint" id="t-drophint">any column names (PIP, Intake Pressure, Amps, …) recognized automatically</div>
+    </div>
+    <div class="err hidden" id="err"></div>
+  </section>
 
-    <section>
-      <h2 data-i18n="hChart">Grafik tren</h2>
-      <div class="chart-tools">
-        <div class="lang-sw" role="group" aria-label="Layout">
-          <button id="layoutSep" class="on">▤</button>
-          <button id="layoutComb">▬</button>
-        </div>
-        <span id="layoutLabel" style="font-family:var(--mono);font-size:12px;color:var(--dim)"></span>
-        <button class="chip" id="pctToggle" style="display:none"></button>
-        <label data-i18n="chartPick">Parameter:</label>
-        <div class="chip-row" id="paramChips"></div>
+  <section class="result panel" id="result">
+    <p class="eyebrow" id="resultSrc"></p>
+    <div class="picker" id="pickerWrap"></div>
+    <div class="ctrls">
+      <span class="chart-hint" id="t-charthint">Scroll/drag to zoom · click a legend item to hide · hover for values</span>
+      <div class="btns">
+        <button class="btn" id="resetZoom">Reset zoom</button>
+        <button class="btn amber" id="exportPng">Export PNG</button>
       </div>
-      <div class="zoom-hint" id="zoomHint"></div>
-      <div id="charts"></div>
-    </section>
+    </div>
+    <canvas id="chart" height="150"></canvas>
 
-    <section>
-      <h2 data-i18n="hExport">Data</h2>
-      <button class="btn" id="btnCsv" data-i18n="btnCsv">Unduh CSV kanonik</button>
-      <span class="note" style="display:inline-block;margin-left:10px" data-i18n="csvNote">Format sama dengan input CSV esp-diagnosa-app.</span>
-    </section>
+    <div class="sec">
+      <div class="sechead">
+        <h4 id="t-statshead">Parameter statistics</h4>
+        <button class="toggle" id="statsToggle"><span id="t-statstoggle">Hide</span> <span class="cv">▾</span></button>
+      </div>
+      <div id="statsBody">
+        <table id="statsTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
 
-  </div>
-
-  <footer>
-    ESP Diagnosa H5 · engine &amp; katalog: signatures.json (single source of truth, sama dengan esp-diagnosa-app CSV) · parsing H5 client-side via h5wasm
-  </footer>
+  <div class="foot" id="foot">ESP Trend Viewer · standalone</div>
 </div>
 
-<div class="watermark">ssolihin99@gmail.com</div>
+<script>
+"use strict";
+let chart=null, LANG='en', LASTSERIES=null, statsOpen=true, FULLRES=null, SELECTED=new Set();
 
-<script src="engine.js"></script>
-<script type="module">
-/* ============================================================
-   ESP Diagnosa H5 — UI + parsing (engine ada di engine.js)
-   ============================================================ */
-
-// ---------- i18n ----------
-const I18N = {
-  id: {
-    title:'ESP Diagnosa H5', dzTitle:'Tarik & letakkan file Instruct .h5 di sini',
-    dzHint:'atau klik untuk memilih file — diproses sepenuhnya di browser, tidak diunggah ke mana pun',
-    winLabel:'Jendela analisa', winAll:'Seluruh data', winH:(h)=>`${h} jam terakhir`,
-    hAnn:'Panel parameter', hDiag:'Diagnosa', hEvid:'Bukti per parameter',
-    hInterp:'Interpretasi & rekomendasi', hChart:'Grafik tren', hExport:'Data',
-    btnCsv:'Unduh CSV kanonik', csvNote:'Format sama dengan input CSV esp-diagnosa-app.',
-    loading:'Memuat engine HDF5 (h5wasm)…', parsing:'Membaca file H5…',
-    diagnosing:'Menjalankan diagnosa…',
-    conf:{high:'tinggi',med:'sedang',low:'rendah'}, confL:'keyakinan',
-    operator:'Aksi operator — cek log setpoint/choke, bukan kegagalan',
-    trip:'TRIP terdeteksi (Amps → ~0)', freqComp:(p)=>`Kompensasi frekuensi aktif — tren dinilai dari nilai ternormalisasi: ${p}`,
-    gatedTxt:(id,name,raw,now,why)=>`${id} ${name}: ${raw}% → ${now}% — ${why}.`,
-    whySudden:'tren teramati gradual, case ini mendadak',
-    whyGradual:'tren teramati mendadak, case ini gradual',
-    pace:{sudden:'mendadak (step)',gradual:'gradual (drift)',any:'campuran'},
-    win:(d,p)=>`Jendela: ${d.toFixed(1)} jam · Pola waktu: ${p}`,
-    evidCols:['Parameter','Teramati','Ekspektasi','Status'],
-    evOk:'cocok', evPart:'parsial', evNo:'menyimpang', keyMark:'kunci',
-    layoutSep:'Terpisah per parameter', layoutComb:'Gabung (1 grafik)',
-    pctOn:'⚖ Persentase: AKTIF', pctOff:'⚖ Persentase: mati',
-    zoomHint:'scroll = zoom · drag = geser · dobel-klik = reset',
-    missing:(m)=>`Parameter tidak tersedia: ${m}`,
-    normMark:(r)=>` (norm/${r})`,
-    errH5:'File tidak dapat dibaca sebagai Instruct H5.',
-    errGroup:"Group 'Non-Conforming Time Series' tidak ditemukan — pastikan file berasal dari Instruct VSD controller.",
-    errNoTags:'Tidak ada tag yang cocok dengan master list di file ini.',
-    errSig:'signatures.json tidak dapat dimuat.',
-    errSigFix:'Jalankan lewat server lokal (mis. <code>python -m http.server</code> lalu buka <code>http://localhost:8000</code>) atau deploy ke GitHub Pages — membuka file HTML langsung (file://) memblokir pemuatan JSON.',
-  },
-  en: {
-    title:'ESP Diagnosa H5', dzTitle:'Drag & drop an Instruct .h5 file here',
-    dzHint:'or click to choose — processed entirely in your browser, nothing is uploaded',
-    winLabel:'Analysis window', winAll:'All data', winH:(h)=>`Last ${h} hours`,
-    hAnn:'Parameter panel', hDiag:'Diagnosis', hEvid:'Evidence per parameter',
-    hInterp:'Interpretation & recommendation', hChart:'Trend charts', hExport:'Data',
-    btnCsv:'Download canonical CSV', csvNote:'Same format as esp-diagnosa-app CSV input.',
-    loading:'Loading HDF5 engine (h5wasm)…', parsing:'Reading H5 file…',
-    diagnosing:'Running diagnosis…',
-    conf:{high:'high',med:'medium',low:'low'}, confL:'confidence',
-    operator:'Operator action — check setpoint/choke logs, not a failure',
-    trip:'TRIP detected (Amps → ~0)', freqComp:(p)=>`Frequency compensation active — trends scored on normalized values: ${p}`,
-    gatedTxt:(id,name,raw,now,why)=>`${id} ${name}: ${raw}% → ${now}% — ${why}.`,
-    whySudden:'observed trend is gradual, this case is sudden',
-    whyGradual:'observed trend is sudden, this case is gradual',
-    pace:{sudden:'sudden (step)',gradual:'gradual (drift)',any:'mixed'},
-    win:(d,p)=>`Window: ${d.toFixed(1)} h · Temporal pattern: ${p}`,
-    evidCols:['Parameter','Observed','Expected','Status'],
-    evOk:'match', evPart:'partial', evNo:'deviates', keyMark:'key',
-    layoutSep:'Separate per parameter', layoutComb:'Combined (1 chart)',
-    pctOn:'⚖ Percentage: ON', pctOff:'⚖ Percentage: off',
-    zoomHint:'scroll = zoom · drag = pan · double-click = reset',
-    missing:(m)=>`Parameters not available: ${m}`,
-    normMark:(r)=>` (norm/${r})`,
-    errH5:'File could not be read as an Instruct H5.',
-    errGroup:"Group 'Non-Conforming Time Series' not found — make sure the file comes from an Instruct VSD controller.",
-    errNoTags:'No tags in this file match the master list.',
-    errSig:'signatures.json could not be loaded.',
-    errSigFix:'Serve over a local server (e.g. <code>python -m http.server</code> then open <code>http://localhost:8000</code>) or deploy to GitHub Pages — opening the HTML directly (file://) blocks JSON loading.',
-  },
+/* ---------- embedded config (mandiri) ---------- */
+const ALIASES={
+  q:"Q",rate:"Q",bfpd:"Q",bpd:"Q",flow:"Q",liquidrate:"Q",
+  pip:"Pi",pi:"Pi",intake:"Pi",pintake:"Pi",intakepressure:"Pi",pumpintakepressure:"Pi",dhintakepressure:"Pi",
+  pdp:"Pd",pd:"Pd",discharge:"Pd",pdischarge:"Pd",dischargepressure:"Pd",dhdischargepressure:"Pd",
+  dp:"dP",deltap:"dP",dppump:"dP",pumpdifferential:"dP",
+  ti:"Ti",fluidtemp:"Ti",intaketemp:"Ti",intaketemperature:"Ti",dhintaketemp:"Ti",dhintaketemperature:"Ti",
+  tm:"Tm",tmotor:"Tm",motortemp:"Tm",motortemperature:"Tm",motorwinding:"Tm",mwt:"Tm",dhmotortemp:"Tm",dhmotortemperature:"Tm",
+  vib:"Vib",vibration:"Vib",dhvibration:"Vib",
+  amps:"Amps",current:"Amps",ra:"Amps",averageamps:"Amps",motorcurrent:"Amps",dhcurrent:"Amps",dhmotorcurrent:"Amps",
+  thp:"THP",whp:"THP",wellhead:"THP",wellheadpressure:"THP",tubinghead:"THP",tubingheadpressure:"THP",
+  chp:"CHP",casing:"CHP",casingpressure:"CHP",casingheadpressure:"CHP",annulus:"CHP",
+  hz:"Freq",freq:"Freq",frequency:"Freq",drivefrequency:"Freq",dhfrequency:"Freq",dhfreq:"Freq",outputfrequency:"Freq"
 };
-let lang = 'id';
-const t = () => I18N[lang];
+const BLOCKLIST=["leakage","insulation"];
+const PLABELS={Q:"Flow Rate",THP:"Wellhead Pressure",Amps:"Motor Current",Pd:"Discharge Pressure",
+  Pi:"Intake Pressure",dP:"Pump Differential",Ti:"Intake Temp",Tm:"Motor Temp",Vib:"Vibration",Freq:"Drive Frequency",CHP:"Casing Pressure"};
+const ORDER=["Freq","Amps","Pi","Pd","dP","THP","CHP","Ti","Tm","Vib","Q"];
+const COLORS={Pi:"#4FB0C6",Pd:"#E5544B",dP:"#F2A93B",Amps:"#3FB6A8",Tm:"#B98CE6",Q:"#89C24F",
+  Ti:"#E58F7B",THP:"#6FA8DC",CHP:"#C6A0F6",Vib:"#E6C34F",Freq:"#7FD1B9"};
 
-// ---------- konstanta parsing (dari converter Instruct yang terbukti) ----------
-const DESIRED = new Set([
-  'DHDischargePressure','DHDischargeTemperature','DHDifferentialPressure',
-  'DHIntakePressure','DHIntakeTemp','DHMotorTemp','DHMotorYpoint',
-  'DHVibration','DHVibrationAX1','DHVibrationAY1','DHVibrationAZ1','DHVibrationY','DHVibrationZ',
-  'DH Cf','DH Cz','VsdFreqOut','VsdAmps','VsdMotAmps','VSD Power In','VSD Power Out',
-  'VSD Volts In','VSD Volts Out','VSD Torque Percentage Live','VSDG7 Load','VSDG7 Speed Cmd WR',
-  'Motor Load','Starts','Temperature','SupplyVolts','Drive Run Status','COS PHI Live',
-  'Active Current Leakage','Passive Current Leakage',
-]);
-const H5_CANON_PRIORITY = {
-  Pi:['DHIntakePressure'], Pd:['DHDischargePressure'], dP:['DHDifferentialPressure'],
-  Ti:['DHIntakeTemp'], Tm:['DHMotorTemp'],
-  Vib:['DHVibration','DHVibrationY','DHVibrationZ','DHVibrationAX1','DHVibrationAY1','DHVibrationAZ1'],
-  Amps:['VsdMotAmps','VsdAmps'], Freq:['VsdFreqOut'],
+/* ---------- i18n ---------- */
+const T={
+  en:{title:"ESP Trend Viewer", sub:"interactive parameter charts · SCADA & Starview CSV",
+    eyebrow:"Data source · sensor time-series", droptitle:"Drop your CSV here",
+    dropsub:"or click to choose · SCADA-flat & Starview formats auto-detected",
+    drophint:"any column names (PIP, Intake Pressure, Amps, …) recognized automatically",
+    charthint:"Scroll/drag to zoom · click a legend item to hide · hover for values",
+    resetZoom:"Reset zoom", exportPng:"Export PNG", statshead:"Parameter statistics", hide:"Hide", show:"Show", pickerHead:"Parameters to display", selAll:"all", selNone:"none",
+    cParam:"Parameter", cN:"n", cMin:"min", cMax:"max", cAvg:"avg", cLast:"last", cDelta:"Δ%",
+    activePoints:"points", range:"range", hours:"h", days:"d",
+    errEmpty:"CSV is empty.", errNoCols:"No recognizable parameter columns. Check the headers.",
+    errRead:"Failed to read file.", errStarview:"Starview format detected but could not be parsed.", errEventLog:"This looks like a VSD event/alarm log (Date/Event), not numeric parameter trends. The viewer charts numeric data only.",
+    starview:"Starview format · auto-converted", tooFew:"Too little active data (Freq>0).",
+    foot:"ESP Trend Viewer · standalone · SCADA + Starview" },
+  id:{title:"ESP Trend Viewer", sub:"grafik parameter interaktif · CSV SCADA & Starview",
+    eyebrow:"Sumber data · time-series sensor", droptitle:"Lepas file CSV di sini",
+    dropsub:"atau klik untuk memilih · format SCADA-flat & Starview dideteksi otomatis",
+    drophint:"nama kolom bebas (PIP, Intake Pressure, Amps, …) dikenali otomatis",
+    charthint:"Scroll/drag untuk zoom · klik item legenda untuk sembunyikan · arahkan kursor untuk nilai",
+    resetZoom:"Reset zoom", exportPng:"Ekspor PNG", statshead:"Statistik parameter", hide:"Sembunyikan", show:"Tampilkan", pickerHead:"Parameter ditampilkan", selAll:"semua", selNone:"kosong",
+    cParam:"Parameter", cN:"n", cMin:"min", cMax:"maks", cAvg:"rata", cLast:"akhir", cDelta:"Δ%",
+    activePoints:"titik", range:"rentang", hours:"jam", days:"hari",
+    errEmpty:"CSV kosong.", errNoCols:"Tidak ada kolom parameter yang dikenali. Cek header.",
+    errRead:"Gagal membaca file.", errStarview:"Format Starview terdeteksi tapi gagal diurai.", errEventLog:"Ini tampak seperti log event/alarm VSD (Date/Event), bukan tren parameter numerik. Viewer hanya membuat grafik data numerik.",
+    starview:"Format Starview · dikonversi otomatis", tooFew:"Data aktif (Freq>0) terlalu sedikit.",
+    foot:"ESP Trend Viewer · mandiri · SCADA + Starview" }
 };
-const PSI = 0.0001450377;  // Pa -> PSI
-const K2C = 273.15;        // K -> °C
+const t=k=>T[LANG][k]??k;
 
-// ---------- state ----------
-let SIG = null;          // signatures.json
-let h5 = null;           // h5wasm module
-let rawSeries = null;    // { canon: {t:Float64Array(ms), v:Float64Array} }
-let sourceMap = {};      // canon -> tag asal
-let grid = null;         // { times: Float64Array(ms), series: {canon: Float64Array} }
-let viewGrid = null;     // grid setelah dipotong jendela analisa — dipakai grafik & CSV
-let lastDiag = null;
-let charts = [];
-let chipsOn = new Set();
+/* ---------- helpers ---------- */
+const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+const minOf=a=>{let m=Infinity;for(let i=0;i<a.length;i++) if(a[i]<m)m=a[i]; return m;};
+const maxOf=a=>{let m=-Infinity;for(let i=0;i<a.length;i++) if(a[i]>m)m=a[i]; return m;};
+const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
+function canon(h){
+  const n=norm(h.replace(/\(.*?\)/g,' '));
+  if(BLOCKLIST.some(b=>n.includes(b))) return null;
+  const raw=h.toLowerCase();
+  const isTemp=/temp|winding|degf|degc/.test(raw), isPress=/pressure|psi/.test(raw);
+  const PRESS={Pi:1,Pd:1,dP:1,THP:1,CHP:1}, TEMP={Ti:1,Tm:1};
+  const ok=tgt=>!( (isTemp&&PRESS[tgt]) || (isPress&&TEMP[tgt]) );   // temp≠tekanan, tekanan≠temp
+  if(ALIASES[n] && ok(ALIASES[n])) return ALIASES[n];
+  let best=null,bl=0;
+  for(const k in ALIASES){ if(k.length>=4 && n.includes(k) && k.length>bl && ok(ALIASES[k])){best=ALIASES[k];bl=k.length;} }
+  return best;
+}
+const fmt=v=>(v!=null&&v===v)?(+v).toLocaleString(undefined,{maximumFractionDigits:2}):'—';
 
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-
-// ---------- muat signatures.json ----------
-async function loadSig() {
-  try {
-    const res = await fetch('signatures.json');
-    if (!res.ok) throw new Error(res.status);
-    SIG = await res.json();
-    $('sigVer').textContent = `signatures.json v${SIG.version} · ${SIG.signatures.length} fault signatures`;
-  } catch (e) {
-    showErr(`<b>${t().errSig}</b><br>${t().errSigFix}`);
-  }
+/* ---------- format detection ---------- */
+function isStarview(text){
+  const head=text.slice(0,800).toLowerCase();
+  if(head.includes('starview')) return true;
+  return /trend\s*1[\s\S]{0,200}trend\s*2/i.test(text.slice(0,1500));
+}
+function parseStarview(text){
+  const g=Papa.parse(text.trim(),{header:false,skipEmptyLines:true}); const rows=g.data;
+  let tn=-1;
+  for(let i=0;i<Math.min(rows.length,10);i++){ if(rows[i].some(c=>/^\s*trend\s*1\s*$/i.test((c||'').trim()))){ tn=i; break; } }
+  if(tn<0) throw new Error(t('errStarview'));
+  const nameRow=rows[tn], nblocks=Math.floor(nameRow.length/3), names=[];
+  for(let b=0;b<nblocks;b++) names.push((nameRow[b*3+2]||'').replace(/"/g,'').trim());
+  const keep=[], fields=['Reading Time'];
+  names.forEach((nm,b)=>{ const c=canon(nm); if(c && !keep.some(k=>k.c===c)){ keep.push({b,c}); fields.push(c); } });
+  if(keep.length<1) throw new Error(t('errNoCols'));
+  const out=[];
+  for(let i=tn+2;i<rows.length;i++){ const r=rows[i]; if(!r||!(r[0]||'').trim()) continue;
+    const o={'Reading Time':(r[0]||'').trim()+' '+(r[1]||'').trim()};
+    keep.forEach(({b,c})=>{ o[c]=(r[b*3+2]||'').trim(); }); out.push(o); }
+  return {data:out, fields};
 }
 
-// ---------- h5wasm (lazy load saat file pertama masuk) ----------
-async function ensureH5() {
-  if (h5) return h5;
-  setStatus(t().loading, true);
-  const mod = await import('https://cdn.jsdelivr.net/npm/h5wasm@0.10.1/dist/esm/hdf5_hl.js');
-  const h5wasm = mod.default ?? mod;
-  const Module = await h5wasm.ready;   // FS ada di Module, bukan di h5wasm
-  h5 = { lib: h5wasm, FS: Module.FS };
-  return h5;
+/* ---------- flat CSV prep (skip title, detect delimiter & decimal) ---------- */
+function detectDelim(lines){
+  const cands=[',',';','\t']; let best=',', bestN=-1;
+  const sample=lines.slice(0,8);
+  cands.forEach(d=>{ const counts=sample.map(l=>l.split(d).length-1).sort((a,b)=>a-b);
+    const med=counts[Math.floor(counts.length/2)]||0; if(med>bestN){bestN=med;best=d;} });
+  return best;
+}
+function findHeaderIdx(lines,delim){
+  for(let i=0;i<Math.min(lines.length,6);i++){
+    const cells=lines[i].split(delim);
+    if(cells.some(c=>/date|time|tanggal|waktu/i.test(c))) return i;
+    if(cells.filter(c=>canon(c)).length>=2) return i;
+  }
+  return 0;
+}
+function prepFlat(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  const delim=detectDelim(lines);
+  const hi=findHeaderIdx(lines,delim);
+  const body=lines.slice(hi).join('\n');
+  const r=Papa.parse(body,{header:true,delimiter:delim,skipEmptyLines:true,dynamicTyping:false});
+  return {data:r.data, fields:r.meta.fields, decimalComma:(delim!==',')};
 }
 
-// ---------- parsing H5 ----------
-async function parseH5(arrayBuffer) {
-  const H5 = await ensureH5();
-  setStatus(t().parsing, true);
-  const path = '/in.h5';
-  try { H5.FS.unlink(path); } catch (_) {}
-  H5.FS.writeFile(path, new Uint8Array(arrayBuffer));
-  const f = new H5.lib.File(path, 'r');
-  try {
-    const g = f.get('Non-Conforming Time Series');
-    if (!g) throw new Error(t().errGroup);
-
-    const tags = {};   // tag -> {t: number[](ms), v: number[]}
-    for (const name of g.keys()) {
-      if (!DESIRED.has(name)) continue;
-      const ds = g.get(name);
-      const meta = ds.metadata ?? {};
-      const members = meta.compound_type?.members?.map(m => m.name);
-      if (!members || !members.includes('time') || !members.includes('value')) continue;
-      const ti = members.indexOf('time'), vi = members.indexOf('value');
-      const rows = ds.value;
-      if (!rows || !rows.length) continue;
-
-      const n = rows.length;
-      const tArr = new Float64Array(n), vArr = new Float64Array(n);
-      const isPress = name.includes('Pressure');
-      const isTemp = name.includes('Temp') || name.includes('Temperature');
-      for (let i = 0; i < n; i++) {
-        const row = rows[i];
-        let tv = Array.isArray(row) ? row[ti] : (row.time ?? row[ti]);
-        let vv = Array.isArray(row) ? row[vi] : (row.value ?? row[vi]);
-        tv = Number(tv); vv = Number(vv);
-        if (isPress) vv *= PSI;
-        else if (isTemp) vv -= K2C;
-        tArr[i] = tv * 1000;   // unix s -> ms
-        vArr[i] = vv;
-      }
-      // urutkan by time bila perlu
-      let sorted = true;
-      for (let i = 1; i < n; i++) if (tArr[i] < tArr[i - 1]) { sorted = false; break; }
-      if (!sorted) {
-        const idx = Array.from(tArr.keys()).sort((a, b) => tArr[a] - tArr[b]);
-        tags[name] = { t: idx.map(i => tArr[i]), v: idx.map(i => vArr[i]) };
-      } else {
-        tags[name] = { t: Array.from(tArr), v: Array.from(vArr) };
-      }
-    }
-    if (!Object.keys(tags).length) throw new Error(t().errNoTags);
-    return tags;
-  } finally {
-    f.close();
+/* ---------- build series from parsed rows ---------- */
+function buildSeries(rows,fields,fmtType,decimalComma){
+  const parseNum=v=>{ if(v==null) return NaN; let s=String(v).trim(); if(!s) return NaN;
+    if(decimalComma) s=s.replace(/\s/g,'').replace(',','.'); return parseFloat(s); };
+  const colMap={}; let timeCol=null;
+  fields.forEach(f=>{ const c=canon(f); if(c) colMap[f]=c; if(/time|date|tanggal|waktu/i.test(f)) timeCol=f; });
+  // Bila beberapa kolom memetakan ke parameter yang sama (mis. DHIntakePressure & DHIntakePressure2),
+  // pilih kolom dengan DATA NYATA terbanyak (bukan yang duluan/belakangan), agar kolom sentinel-0 tak menang.
+  const cand={}; Object.entries(colMap).forEach(([raw,c])=>{ (cand[c]=cand[c]||[]).push(raw); });
+  const dataScore=raw=>{ let s=0; for(let i=0;i<rows.length;i++){ const v=parseNum(rows[i][raw]); if(v===v && v!==0) s++; } return s; };
+  const canonCols={};
+  for(const c in cand){
+    if(cand[c].length===1){ canonCols[c]=cand[c][0]; continue; }
+    let best=cand[c][0], bs=-1;
+    cand[c].forEach(raw=>{ const s=dataScore(raw); if(s>bs){ bs=s; best=raw; } });
+    canonCols[c]=best;
   }
+  const series={}, times=[];
+  rows.forEach(r=>{ if(timeCol){ const d=new Date(r[timeCol]); times.push(isNaN(d)?null:d); } });
+  const TEMPP={Ti:1,Tm:1};
+  for(const c in canonCols) series[c]=rows.map(r=>{ let v=parseNum(r[canonCols[c]]); if(isNaN(v)) return NaN;
+    if(TEMPP[c] && v<=-400) return NaN;   // sentinel "no reading" (mis. -459°F absolute zero)
+    return v; });
+  if(series.Pd && series.Pi && !series.dP) series.dP=series.Pd.map((v,i)=>{ const p=series.Pi[i]; return (v===v&&p===p)?v-p:NaN; });
+  if(!Object.keys(series).length) throw new Error(t('errNoCols'));
+
+  // Viewer: tampilkan SEMUA baris apa adanya (jangan sembunyikan periode ESP mati / Freq=0).
+  // Filter kondisi-jalan hanya relevan untuk app diagnosa, bukan viewer.
+  let idx=rows.map((_,i)=>i);
+  const pick=a=>idx.map(i=>a[i]);
+
+  // stats
+  const stats=[];
+  const present=Object.keys(series).sort((a,b)=>{const ia=ORDER.indexOf(a),ib=ORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
+  for(const c of present){
+    const v=pick(series[c]).filter(x=>x===x); if(v.length<1) continue;
+    const head=Math.max(1,Math.floor(v.length*0.15));
+    const base=avg(v.slice(0,head)), last=avg(v.slice(-head));
+    const d=Math.abs(base)<1e-6?(last-base)*100:(last-base)/Math.abs(base)*100;
+    stats.push({p:c, n:v.length, min:minOf(v), max:maxOf(v), avg:avg(v), last:v[v.length-1], delta:d});
+  }
+
+  // chart data (downsample, keep raw)
+  const step=Math.max(1,Math.floor(idx.length/400));
+  const data={};
+  for(const c of present){ const run=pick(series[c]); if(run.filter(x=>x===x).length<1) continue;
+    data[c]=run.filter((_,i)=>i%step===0); }
+  const runTimes=idx.map(i=>times[i]).filter(Boolean);
+  let labels;
+  if(runTimes.length){ labels=idx.filter((_,i)=>i%step===0).map(i=>{ const d=times[i];
+    return d?`${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`:''; }); }
+  else { const k=Object.keys(data)[0]; labels=k?data[k].map((_,i)=>String(i+1)):[]; }
+
+  let spanH=null;
+  if(runTimes.length>1) spanH=(runTimes[runTimes.length-1]-runTimes[0])/3.6e6;
+  return {stats, chart:{labels,data}, meta:{points:idx.length, spanH, fmtType}};
 }
 
-// ---------- kanonisasi + grid ffill ----------
-function normName(s){ return s.toLowerCase().replace(/[^a-z]/g,''); }
-
-function buildCanonical(tags) {
-  const series = {}; sourceMap = {};
-  // prioritas eksplisit
-  for (const [canon, cands] of Object.entries(H5_CANON_PRIORITY)) {
-    for (const tag of cands) {
-      if (tags[tag] && tags[tag].v.some(Number.isFinite)) {
-        series[canon] = tags[tag]; sourceMap[canon] = tag; break;
-      }
-    }
-  }
-  // fallback alias signatures.json
-  const block = SIG.aliasBlocklist ?? [];
-  for (const [tag, data] of Object.entries(tags)) {
-    const key = normName(tag);
-    if (block.some(b => key.includes(b))) continue;
-    const canon = SIG.aliases[key];
-    if (canon && !series[canon]) { series[canon] = data; sourceMap[canon] = tag; }
-  }
-  return series;
+/* ---------- render ---------- */
+function showResult(res){
+  FULLRES=res; LASTSERIES=res;
+  SELECTED=new Set(res.stats.map(s=>s.p));   // default: semua parameter terpilih
+  document.getElementById('result').style.display='block';
+  { const dz=document.getElementById('drop'); dz.classList.add('compact'); document.getElementById('t-droptitle').textContent=LANG==='id'?'Ganti CSV':'Change CSV'; document.getElementById('t-dropsub').classList.add('hidden'); }
+  refresh();
+}
+function refresh(){
+  if(!FULLRES) return;
+  const spanStr=FULLRES.meta.spanH!=null?` · ${t('range')} ${FULLRES.meta.spanH<48?FULLRES.meta.spanH.toFixed(1)+' '+t('hours'):(FULLRES.meta.spanH/24).toFixed(1)+' '+t('days')}`:'';
+  const fmtStr=FULLRES.meta.fmtType==='starview'?` · ${t('starview')}`:'';
+  document.getElementById('resultSrc').textContent=`${FULLRES.meta.points} ${t('activePoints')}${spanStr}${fmtStr}`;
+  buildPicker();
+  renderSelected();
+}
+function buildPicker(){
+  const wrap=document.getElementById('pickerWrap');
+  const all=FULLRES.stats.map(s=>s.p);
+  let html=`<div class="ph"><span class="pt">${t('pickerHead')} · ${SELECTED.size}/${all.length}</span>`+
+    `<span class="quicks"><button class="quick" data-q="all">${t('selAll')}</button><button class="quick" data-q="none">${t('selNone')}</button></span></div><div class="chips">`;
+  all.forEach(p=>{
+    const on=SELECTED.has(p), col=COLORS[p]||'#8A9BA8';
+    html+=`<span class="chip ${on?'on':'off'}" data-p="${p}"><span class="cdot" style="background:${col}"></span>${p}</span>`;
+  });
+  html+=`</div>`;
+  wrap.innerHTML=html;
+  wrap.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+    const p=c.dataset.p; if(SELECTED.has(p)) SELECTED.delete(p); else SELECTED.add(p);
+    refresh();
+  }));
+  wrap.querySelectorAll('.quick').forEach(b=>b.addEventListener('click',()=>{
+    if(b.dataset.q==='all') SELECTED=new Set(all); else SELECTED=new Set();
+    refresh();
+  }));
+}
+function renderSelected(){
+  const data={};
+  for(const p in FULLRES.chart.data) if(SELECTED.has(p)) data[p]=FULLRES.chart.data[p];
+  const stats=FULLRES.stats.filter(s=>SELECTED.has(s.p));
+  drawChart({labels:FULLRES.chart.labels, data});
+  drawStats(stats);
+}
+function drawStats(stats){
+  const thead=document.querySelector('#statsTable thead'), tbody=document.querySelector('#statsTable tbody');
+  thead.innerHTML=`<tr><th>${t('cParam')}</th><th>${t('cN')}</th><th>${t('cMin')}</th><th>${t('cMax')}</th><th>${t('cAvg')}</th><th>${t('cLast')}</th><th>${t('cDelta')}</th></tr>`;
+  tbody.innerHTML='';
+  stats.forEach(s=>{
+    const col=COLORS[s.p]||'#8A9BA8';
+    const dcls=s.delta>0.5?'up':s.delta<-0.5?'down':'';
+    tbody.insertAdjacentHTML('beforeend',
+      `<tr><td class="pname"><span class="dotc" style="background:${col}"></span>${s.p} <span style="color:var(--faint);font-weight:400">${PLABELS[s.p]||''}</span></td>`+
+      `<td class="num">${s.n}</td><td class="num">${fmt(s.min)}</td><td class="num">${fmt(s.max)}</td>`+
+      `<td class="num">${fmt(s.avg)}</td><td class="num">${fmt(s.last)}</td>`+
+      `<td class="num delta ${dcls}">${s.delta>0?'+':''}${s.delta.toFixed(1)}%</td></tr>`);
+  });
+}
+function drawChart(series){
+  const ctx=document.getElementById('chart'); if(chart) chart.destroy();
+  const palette=Object.values(COLORS); let ci=0;
+  const ds=Object.entries(series.data).map(([k,v])=>{
+    const f=v.filter(x=>x===x), mn=minOf(f), mx=maxOf(f), rng=(mx-mn)||1;
+    const color=COLORS[k]||palette[ci++%palette.length];
+    return {label:k, data:v.map(x=>x===x?(x-mn)/rng*100:null), _raw:v, borderColor:color, backgroundColor:color,
+      borderWidth:1.5, pointRadius:0, pointHoverRadius:3, tension:.2, spanGaps:true};
+  });
+  chart=new Chart(ctx,{type:'line', data:{labels:series.labels, datasets:ds},
+    options:{responsive:true, animation:false, interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{labels:{color:'#8A9BA8',font:{family:'JetBrains Mono',size:11},usePointStyle:true,boxWidth:8}},
+        tooltip:{enabled:true, backgroundColor:'#1D2C3A', borderColor:'#324A61', borderWidth:1,
+          titleColor:'#E6EDF3', bodyColor:'#E6EDF3', titleFont:{family:'JetBrains Mono',size:11}, bodyFont:{family:'JetBrains Mono',size:11},
+          callbacks:{ label:c=>{ const r=c.dataset._raw?c.dataset._raw[c.dataIndex]:null; return `${c.dataset.label}: ${fmt(r)}`; } }},
+        zoom:{ pan:{enabled:true,mode:'x'},
+          zoom:{ wheel:{enabled:true}, pinch:{enabled:true},
+            drag:{enabled:true,backgroundColor:'rgba(242,169,59,0.12)',borderColor:'#F2A93B',borderWidth:1}, mode:'x' } }
+      },
+      scales:{x:{ticks:{color:'#5C6F7E',maxTicksLimit:9,font:{size:10}},grid:{color:'rgba(38,56,74,.4)'}},
+        y:{ticks:{color:'#5C6F7E',callback:v=>v+'%',font:{size:10}},grid:{color:'rgba(38,56,74,.4)'},
+          title:{display:true,text:'min–max %',color:'#5C6F7E',font:{size:9}}}}}});
 }
 
-function buildGrid(canonSeries) {
-  // union timestamps — pakai loop biasa, BUKAN push(...arr):
-  // spread pada array ratusan ribu elemen menyebabkan stack overflow
-  const all = [];
-  for (const s of Object.values(canonSeries)) {
-    for (let i = 0; i < s.t.length; i++) all.push(s.t[i]);
-  }
-  const times = Float64Array.from([...new Set(all)].sort((a, b) => a - b));
-
-  const series = {};
-  for (const [p, s] of Object.entries(canonSeries)) {
-    const out = new Float64Array(times.length).fill(NaN);
-    let j = 0;
-    for (let i = 0; i < times.length; i++) {
-      while (j < s.t.length && s.t[j] <= times[i]) j++;
-      if (j > 0) out[i] = s.v[j - 1];               // ffill
-    }
-    // bfill kepala
-    let firstIdx = out.findIndex(Number.isFinite);
-    if (firstIdx > 0) out.fill(out[firstIdx], 0, firstIdx);
-    series[p] = out;
-  }
-  // turunkan dP = Pd - Pi bila belum ada
-  if (!series.dP && series.Pd && series.Pi) {
-    const d = new Float64Array(times.length);
-    for (let i = 0; i < times.length; i++) d[i] = series.Pd[i] - series.Pi[i];
-    series.dP = d; sourceMap.dP = 'derived: Pd − Pi';
-  }
-  return { times, series };
+/* ---------- apply language ---------- */
+function applyLang(){
+  document.documentElement.lang=LANG;
+  const set=(id,k)=>{const el=document.getElementById(id); if(el) el.textContent=t(k);};
+  set('t-title','title'); set('t-sub','sub'); set('t-eyebrow','eyebrow');
+  set('t-droptitle','droptitle'); set('t-dropsub','dropsub'); set('t-drophint','drophint');
+  set('t-charthint','charthint'); set('resetZoom','resetZoom'); set('exportPng','exportPng'); set('t-statshead','statshead');
+  { const st=document.getElementById('t-statstoggle'); if(st) st.textContent=t(statsOpen?'hide':'show'); }
+  set('foot','foot');
+  document.querySelectorAll('#langToggle button').forEach(b=>b.classList.toggle('on',b.dataset.lang===LANG));
+  if(FULLRES) refresh();
 }
 
-function sliceWindow(g, hours) {
-  if (hours === 'all') return g;
-  const cutoff = g.times[g.times.length - 1] - Number(hours) * 3.6e6;
-  let start = g.times.findIndex(x => x >= cutoff);
-  if (start < 0) start = 0;
-  const times = g.times.slice(start);
-  const series = {};
-  for (const [p, v] of Object.entries(g.series)) series[p] = v.slice(start);
-  return { times, series };
-}
-
-// ---------- render ----------
-function setStatus(msg, busy=false){ $('status').innerHTML = msg ? (busy?'<span class="spin"></span>':'')+esc(msg) : ''; }
-function showErr(html){ $('errBox').innerHTML = `<div class="err">${html}</div>`; }
-function clearErr(){ $('errBox').innerHTML=''; }
-
-const glyph = (lvl) => SIG.levelGlyph[String(lvl)];
-const lvlLabel = (lvl) => SIG.levelLabels[lang][String(lvl)];
-const paramLabel = (p) => (lang==='id'?SIG.paramLabelsId:SIG.paramLabels)[p] ?? p;
-const sigName = (s) => lang==='id' && s.nameId ? s.nameId : s.name;
-
-function renderAnnunciator(d) {
-  const el = $('annunciator'); el.innerHTML = '';
-  for (const p of SIG.params) {
-    const o = d.obs[p];
-    const div = document.createElement('div');
-    if (!o) {
-      div.className = 'ann';
-      div.innerHTML = `<div class="tag">${p}</div><div class="glyph" style="color:var(--dim)">—</div><div class="dpct">n/a</div>`;
-    } else {
-      const tr = o.trend;
-      const cls = tr.level>0?'up':tr.level<0?'down':'';
-      const alarm = Math.abs(tr.level)===3?' alarm':'';
-      div.className = `ann ${cls}${alarm}`;
-      div.innerHTML =
-        `<div class="tag">${p} · ${esc(paramLabel(p))}</div>`+
-        `<div class="glyph">${glyph(tr.level)}</div>`+
-        `<div class="dpct">Δ ${tr.dPct>=0?'+':''}${tr.dPct.toFixed(1)}%${o.normalized?t().normMark(o.normalized):''}</div>`+
-        (o.signal?`<span class="sigch">${o.signal}</span>`:'');
-    }
-    el.appendChild(div);
-  }
-}
-
-function renderDiagnosis(d) {
-  const top = d.results[0], s = top.sig;
-  const confKey = top.pct>=75?'high':top.pct>=55?'med':'low';
-  const badges = [];
-  if (s.operator) badges.push(`<span class="badge warn">⚠ ${esc(t().operator)}</span>`);
-  if (d.trip)     badges.push(`<span class="badge trip">● ${esc(t().trip)}</span>`);
-  if (d.freqComp) badges.push(`<span class="badge">ƒ ${esc(t().freqComp(d.compParams.join(', ')))}</span>`);
-  badges.push(`<span class="badge">${esc(t().win(d.durH, t().pace[d.pace]))}</span>`);
-
-  $('diagTop').innerHTML =
-    `<div class="dt-id">${esc(s.id)} · ${esc(t().confL)}: ${esc(t().conf[confKey])}</div>`+
-    `<div class="dt-name">${esc(sigName(s))}</div>`+
-    `<div class="scorebar"><div class="bar"><i style="width:${top.pct}%"></i></div><div class="val">${top.pct}%</div></div>`+
-    `<div class="badges">${badges.join('')}</div>`;
-
-  $('cands').innerHTML = d.results.slice(1, 4).map(r =>
-    `<div class="cand"><span class="c-id">${esc(r.sig.id)}</span><span>${esc(sigName(r.sig))}</span>`+
-    (r.gated?`<span class="c-gate">⛔ ${r.rawPct}%→${r.pct}%</span>`:'')+
-    `<span class="c-pct">${r.pct}%</span></div>`).join('');
-
-  // kejujuran epistemik: jelaskan case tinggi yang tergating
-  const gatedHigh = d.results.filter(r => r.gated && r.rawPct >= d.results[0].pct).slice(0, 2);
-  $('gateNotes').innerHTML = gatedHigh.map(g => {
-    const why = g.sig.pace==='sudden'?t().whySudden:t().whyGradual;
-    return `<div class="note">ℹ ${esc(t().gatedTxt(g.sig.id, sigName(g.sig), g.rawPct, g.pct, why))}</div>`;
-  }).join('');
-}
-
-function renderEvidence(d) {
-  const top = d.results[0];
-  const cols = t().evidCols;
-  let html = `<tr><th>${cols[0]}</th><th>${cols[1]}</th><th>${cols[2]}</th><th>${cols[3]}</th></tr>`;
-  for (const e of top.evidence) {
-    if (e.param === 'Amps(signal)') {
-      html += `<tr><td class="p">Amps signal ${e.key?'🔑':''}</td><td>${esc(e.observed)}</td><td>${esc(e.expected)}</td><td class="ok">${t().evOk}</td></tr>`;
-      continue;
-    }
-    const o = d.obs[e.param];
-    const cls = e.match>=0.6?'ok':e.match>0?'part':'no';
-    const st = e.match>=0.6?t().evOk:e.match>0?t().evPart:t().evNo;
-    html += `<tr><td class="p">${esc(e.param)} ${e.key?'🔑':''}</td>`+
-      `<td>${lvlLabel(e.observed)} (Δ ${o.trend.dPct>=0?'+':''}${o.trend.dPct.toFixed(1)}%)</td>`+
-      `<td>${lvlLabel(e.expected)}</td><td class="${cls}">${st}</td></tr>`;
-  }
-  $('evidTable').innerHTML = html;
-
-  const missing = SIG.params.filter(p => !d.obs[p]);
-  if (missing.length) {
-    $('evidTable').insertAdjacentHTML('afterend', '');
-  }
-  $('narasi').innerHTML = `<b>${lang==='id'?'Interpretasi':'Interpretation'}:</b> ${esc(top.sig.narasi[lang])}`
-    + (missing.length?`<div class="note" style="margin-top:10px">${esc(t().missing(missing.join(', ')))}</div>`:'');
-  $('rekom').innerHTML = `<b>${lang==='id'?'Rekomendasi':'Recommendation'}:</b> ${esc(top.sig.rekomendasi[lang])}`;
-}
-
-// ---------- grafik (Chart.js small multiples, downsample tampilan) ----------
-function downsample(times, vals, target=1500) {
-  const n = times.length;
-  if (n <= target) return { t: Array.from(times), v: Array.from(vals) };
-  const bucket = Math.ceil(n / target);
-  const t2 = [], v2 = [];
-  for (let i = 0; i < n; i += bucket) {
-    const seg = [];
-    for (let j = i; j < Math.min(i + bucket, n); j++) if (Number.isFinite(vals[j])) seg.push(vals[j]);
-    t2.push(times[Math.min(i + Math.floor(bucket/2), n-1)]);
-    v2.push(seg.length ? seg.sort((a,b)=>a-b)[Math.floor(seg.length/2)] : NaN);  // median
-  }
-  return { t: t2, v: v2 };
-}
-
-const CHART_COLORS = ['#57C7FF','#FFB020','#B48CFF','#35D07F','#FF5A52','#FF9ED2','#8AE1DC','#E0C060','#9FB3C8'];
-
-let chartLayout = 'sep';   // 'sep' | 'comb'
-let pctMode = false;
-
-// watermark di dalam canvas — ikut terbawa saat grafik di-screenshot
-const WatermarkPlugin = {
-  id: 'espWatermark',
-  afterDraw(chart) {
-    const { ctx, chartArea } = chart;
-    if (!chartArea) return;
-    ctx.save();
-    ctx.font = '10px "IBM Plex Mono", monospace';
-    ctx.fillStyle = 'rgba(122,140,160,0.45)';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('ssolihin99@gmail.com', chartArea.right - 6, chartArea.bottom - 4);
-    ctx.restore();
-  },
-};
-
-const zoomOpts = () => ({
-  zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
-  pan: { enabled: true, mode: 'x' },
-});
-
-function baseScales() {
-  return {
-    x: { type: 'time', grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', maxTicksLimit: 8, font: { family: 'IBM Plex Mono', size: 10 } } },
-    y: { grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', font: { family: 'IBM Plex Mono', size: 10 } } },
+/* ---------- file handling ---------- */
+function showErr(m){ const e=document.getElementById('err'); e.textContent='⚠ '+m; e.classList.remove('hidden'); }
+function handleFile(f){
+  document.getElementById('err').classList.add('hidden');
+  document.getElementById('status').innerHTML=`<b>${f.name}</b>`;
+  const reader=new FileReader();
+  reader.onerror=()=>showErr(t('errRead'));
+  reader.onload=()=>{
+    try{
+      const text=reader.result; let parsed, fmtType, decimalComma=false;
+      if(/^[^\n]*\bevent\b\s*$/im.test(text.split(/\r?\n/).slice(0,4).join('\n')) && /date ?time/i.test(text.slice(0,300))) throw new Error(t('errEventLog'));
+      if(isStarview(text)){ fmtType='starview'; parsed=parseStarview(text); }
+      else{ fmtType='flat'; const p=prepFlat(text); parsed={data:p.data,fields:p.fields}; decimalComma=p.decimalComma; }
+      if(!parsed.data.length) throw new Error(t('errEmpty'));
+      const res=buildSeries(parsed.data,parsed.fields,fmtType,decimalComma);
+      if(!res.stats.length) throw new Error(t('errNoCols'));
+      showResult(res);
+    }catch(e){ showErr(e.message); }
   };
+  reader.readAsText(f);
 }
 
-function renderCharts() {
-  charts.forEach(c => c.destroy()); charts = [];
-  const holder = $('charts'); holder.innerHTML = '';
-  if (typeof Chart === 'undefined') {
-    holder.innerHTML = `<div class="note">⚠ Chart.js gagal dimuat dari CDN — grafik dilewati, diagnosa tetap valid. Periksa koneksi internet lalu refresh.</div>`;
-    return;
-  }
-  const picks = [...chipsOn];
-  if (!picks.length) return;
-
-  if (chartLayout === 'comb') {
-    // ---- MODE GABUNG: 1 grafik, semua parameter, opsi skala persentase ----
-    const cell = document.createElement('div');
-    cell.className = 'chart-cell tall';
-    const title = picks.map(p => esc(p)).join(' · ') + (pctMode ? ' — %' : '');
-    cell.innerHTML = `<div class="cc-title">${title}</div><canvas></canvas>`;
-    holder.appendChild(cell);
-
-    const datasets = picks.map((p, i) => {
-      const ds = downsample(viewGrid.times, viewGrid.series[p]);
-      let v = ds.v;
-      if (pctMode) {
-        const mx = Math.max(...v.filter(Number.isFinite).map(Math.abs));
-        v = mx ? v.map(x => x / mx * 100) : v.map(() => 0);
-      }
-      return {
-        label: p, data: ds.t.map((t, k) => ({ x: t, y: v[k] })),
-        borderColor: CHART_COLORS[i % CHART_COLORS.length],
-        borderWidth: 1.3, pointRadius: 0, spanGaps: true,
-      };
-    });
-    const scales = baseScales();
-    if (pctMode) { scales.y.min = 0; scales.y.max = 105; }
-    const c = new Chart(cell.querySelector('canvas'), {
-      type: 'line', data: { datasets }, plugins: [WatermarkPlugin],
-      options: {
-        animation: false, responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { display: true, labels: { color: '#D7E1EA', font: { family: 'IBM Plex Mono', size: 11 }, boxWidth: 18, boxHeight: 2 } },
-          tooltip: { callbacks: { title: (items) => new Date(items[0].parsed.x).toLocaleString() } },
-          zoom: zoomOpts(),
-        },
-        scales,
-      },
-    });
-    cell.querySelector('canvas').ondblclick = () => c.resetZoom();
-    charts.push(c);
-    return;
-  }
-
-  // ---- MODE TERPISAH: small multiples per parameter ----
-  picks.forEach((p, i) => {
-    const cell = document.createElement('div');
-    cell.className = 'chart-cell';
-    cell.innerHTML = `<div class="cc-title">${esc(p)} · ${esc(paramLabel(p))} <span style="opacity:.6">← ${esc(sourceMap[p]??'')}</span></div><canvas></canvas>`;
-    holder.appendChild(cell);
-    const ds = downsample(viewGrid.times, viewGrid.series[p]);
-    const c = new Chart(cell.querySelector('canvas'), {
-      type: 'line', plugins: [WatermarkPlugin],
-      data: { labels: ds.t, datasets: [{ data: ds.v, borderColor: CHART_COLORS[i % CHART_COLORS.length],
-        borderWidth: 1.3, pointRadius: 0, spanGaps: true }] },
-      options: {
-        animation: false, responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: { legend: { display: false }, tooltip: { callbacks: {
-          title: (items) => new Date(items[0].parsed.x).toLocaleString() } },
-          zoom: zoomOpts() },
-        scales: {
-          x: { type: 'time', grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', maxTicksLimit: 8, font: { family: 'IBM Plex Mono', size: 10 } } },
-          y: { grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', font: { family: 'IBM Plex Mono', size: 10 } } },
-        },
-      },
-    });
-    cell.querySelector('canvas').ondblclick = () => c.resetZoom();
-    charts.push(c);
-  });
-}
-
-function renderChips() {
-  const el = $('paramChips'); el.innerHTML = '';
-  for (const p of Object.keys(grid.series)) {
-    const b = document.createElement('button');
-    b.className = 'chip' + (chipsOn.has(p) ? ' on' : '');
-    b.textContent = p;
-    b.onclick = () => { chipsOn.has(p) ? chipsOn.delete(p) : chipsOn.add(p); renderChips(); renderCharts(); };
-    el.appendChild(b);
-  }
-}
-
-// ---------- CSV export (format pipeline CSV esp-diagnosa-app) ----------
-function exportCsv() {
-  const cols = Object.keys(viewGrid.series);
-  let out = 'time,' + cols.join(',') + '\n';
-  const n = viewGrid.times.length;
-  for (let i = 0; i < n; i++) {
-    const row = [new Date(viewGrid.times[i]).toISOString()];
-    for (const c of cols) { const v = viewGrid.series[c][i]; row.push(Number.isFinite(v) ? v : ''); }
-    out += row.join(',') + '\n';
-  }
-  const blob = new Blob([out], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'esp_canonical_data.csv';
-  a.click(); URL.revokeObjectURL(a.href);
-}
-
-// ---------- alur utama ----------
-async function handleFile(file) {
-  clearErr();
-  $('dzFile').textContent = `${file.name} · ${(file.size/1048576).toFixed(1)} MB`;
-  try {
-    const buf = await file.arrayBuffer();
-    const tags = await parseH5(buf);
-    const canonSeries = buildCanonical(tags);
-    grid = buildGrid(canonSeries);
-    rawSeries = canonSeries;
-    if (!chipsOn.size) chipsOn = new Set(['Amps','dP','Pi','Freq'].filter(p => grid.series[p]));
-    rerun();
-  } catch (e) {
-    setStatus('');
-    showErr(`<b>${esc(t().errH5)}</b><br>${esc(e.message ?? e)}`);
-  }
-}
-
-function rerun() {
-  if (!grid) return;
-  setStatus(t().diagnosing, true);
-  viewGrid = sliceWindow(grid, $('winSel').value);
-  lastDiag = EspEngine.runDiagnosis(Array.from(viewGrid.times), viewGrid.series, SIG);
-  renderAnnunciator(lastDiag);
-  renderDiagnosis(lastDiag);
-  renderEvidence(lastDiag);
-  renderChips();
-  renderCharts();
-  $('results').classList.remove('hidden');
-  setStatus('');
-}
-
-// ---------- events ----------
-const dz = $('dropzone'), fi = $('fileInput');
-dz.onclick = () => fi.click();
-dz.onkeydown = (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); fi.click(); } };
-fi.onchange = () => fi.files[0] && handleFile(fi.files[0]);
-['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
-['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
-dz.addEventListener('drop', e => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
-$('winSel').onchange = rerun;
-$('btnCsv').onclick = exportCsv;
-
-function syncChartTools() {
-  $('layoutSep').classList.toggle('on', chartLayout==='sep');
-  $('layoutComb').classList.toggle('on', chartLayout==='comb');
-  $('layoutLabel').textContent = chartLayout==='sep' ? t().layoutSep : t().layoutComb;
-  $('zoomHint').textContent = t().zoomHint;
-  const pb = $('pctToggle');
-  pb.style.display = chartLayout==='comb' ? '' : 'none';
-  pb.textContent = pctMode ? t().pctOn : t().pctOff;
-  pb.classList.toggle('on', pctMode);
-}
-$('layoutSep').onclick = () => { chartLayout='sep'; syncChartTools(); renderCharts(); };
-$('layoutComb').onclick = () => { chartLayout='comb'; syncChartTools(); renderCharts(); };
-$('pctToggle').onclick = () => { pctMode=!pctMode; syncChartTools(); renderCharts(); };
-
-function applyLang() {
-  document.querySelectorAll('[data-i18n]').forEach(el => {
-    const k = el.dataset.i18n;
-    if (typeof I18N[lang][k] === 'string') el.textContent = I18N[lang][k];
-  });
-  const winSel = $('winSel');
-  winSel.options[0].textContent = t().winAll;
-  for (let i = 1; i < winSel.options.length; i++) winSel.options[i].textContent = t().winH(winSel.options[i].value);
-  $('langId').classList.toggle('on', lang==='id');
-  $('langEn').classList.toggle('on', lang==='en');
-  syncChartTools();
-  if (lastDiag) { renderAnnunciator(lastDiag); renderDiagnosis(lastDiag); renderEvidence(lastDiag); renderCharts(); }
-}
-$('langId').onclick = () => { lang='id'; applyLang(); };
-$('langEn').onclick = () => { lang='en'; applyLang(); };
-
-// ---------- init ----------
-await loadSig();
+/* ---------- wiring ---------- */
+try{ const zp=window.ChartZoom||window.chartjsPluginZoom||window['chartjs-plugin-zoom'];
+  if(zp && window.Chart && Chart.register) Chart.register(zp.default||zp); }catch(e){}
+const drop=document.getElementById('drop'), fileInput=document.getElementById('file');
+drop.addEventListener('click',()=>fileInput.click());
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+fileInput.addEventListener('change',e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+document.getElementById('resetZoom').addEventListener('click',()=>{ if(chart&&chart.resetZoom) chart.resetZoom(); });
+document.getElementById('exportPng').addEventListener('click',()=>{
+  if(!chart)return; const a=document.createElement('a');
+  a.href=chart.toBase64Image('image/png',1); a.download='esp-trend.png'; a.click();
+});
+document.getElementById('statsToggle').addEventListener('click',()=>{
+  statsOpen=!statsOpen;
+  document.getElementById('statsBody').classList.toggle('hidden',!statsOpen);
+  document.getElementById('statsToggle').classList.toggle('closed',!statsOpen);
+  document.getElementById('t-statstoggle').textContent=t(statsOpen?'hide':'show');
+});
+document.getElementById('langToggle').addEventListener('click',e=>{
+  if(e.target.tagName!=='BUTTON')return; LANG=e.target.dataset.lang;
+  try{localStorage.setItem('espv_lang',LANG);}catch(_){}
+  applyLang();
+});
+try{ const s=localStorage.getItem('espv_lang'); if(s==='en'||s==='id')LANG=s;
+  else if((navigator.language||'').toLowerCase().startsWith('id'))LANG='id'; }catch(_){}
 applyLang();
 </script>
 </body>
