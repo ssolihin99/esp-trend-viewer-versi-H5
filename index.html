@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/h5wasm@0.7.0/dist/h5wasm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -119,10 +120,10 @@ canvas{margin-top:4px}
     <p class="eyebrow" id="t-eyebrow">Data source · sensor time-series</p>
     <div class="drop" id="drop">
       <div class="ic">↧</div>
-      <h3 id="t-droptitle">Drop your CSV here</h3>
-      <p id="t-dropsub">or click to choose · SCADA-flat &amp; Starview formats auto-detected</p>
-      <input type="file" id="file" accept=".csv" class="hidden">
-      <div class="hint" id="t-drophint">any column names (PIP, Intake Pressure, Amps, …) recognized automatically</div>
+      <h3 id="t-droptitle">Drop your CSV or H5 file here</h3>
+      <p id="t-dropsub">or click to choose · CSV (SCADA-flat &amp; Starview) &amp; HDF5 auto-detected</p>
+      <input type="file" id="file" accept=".csv,.h5,.hdf5" class="hidden">
+      <div class="hint" id="t-drophint">CSV: any column names recognized · H5: auto-detects numeric datasets</div>
     </div>
     <div class="err hidden" id="err"></div>
   </section>
@@ -134,6 +135,7 @@ canvas{margin-top:4px}
       <span class="chart-hint" id="t-charthint">Scroll/drag to zoom · click a legend item to hide · hover for values</span>
       <div class="btns">
         <button class="btn" id="resetZoom">Reset zoom</button>
+        <button class="btn" id="exportCsv">Export CSV</button>
         <button class="btn amber" id="exportPng">Export PNG</button>
       </div>
     </div>
@@ -180,30 +182,30 @@ const COLORS={Pi:"#4FB0C6",Pd:"#E5544B",dP:"#F2A93B",Amps:"#3FB6A8",Tm:"#B98CE6"
 
 /* ---------- i18n ---------- */
 const T={
-  en:{title:"ESP Trend Viewer", sub:"interactive parameter charts · SCADA & Starview CSV",
-    eyebrow:"Data source · sensor time-series", droptitle:"Drop your CSV here",
-    dropsub:"or click to choose · SCADA-flat & Starview formats auto-detected",
-    drophint:"any column names (PIP, Intake Pressure, Amps, …) recognized automatically",
+  en:{title:"ESP Trend Viewer", sub:"interactive parameter charts · SCADA & Starview CSV & HDF5",
+    eyebrow:"Data source · sensor time-series", droptitle:"Drop your CSV or H5 file here",
+    dropsub:"or click to choose · CSV (SCADA-flat & Starview) & HDF5 auto-detected",
+    drophint:"CSV: any column names recognized · H5: auto-detects numeric datasets",
     charthint:"Scroll/drag to zoom · click a legend item to hide · hover for values",
-    resetZoom:"Reset zoom", exportPng:"Export PNG", statshead:"Parameter statistics", hide:"Hide", show:"Show", pickerHead:"Parameters to display", selAll:"all", selNone:"none",
+    resetZoom:"Reset zoom", exportCsv:"Export CSV", exportPng:"Export PNG", statshead:"Parameter statistics", hide:"Hide", show:"Show", pickerHead:"Parameters to display", selAll:"all", selNone:"none",
     cParam:"Parameter", cN:"n", cMin:"min", cMax:"max", cAvg:"avg", cLast:"last", cDelta:"Δ%",
     activePoints:"points", range:"range", hours:"h", days:"d",
-    errEmpty:"CSV is empty.", errNoCols:"No recognizable parameter columns. Check the headers.",
+    errEmpty:"File is empty.", errNoCols:"No recognizable parameter columns. Check the headers.",
     errRead:"Failed to read file.", errStarview:"Starview format detected but could not be parsed.", errEventLog:"This looks like a VSD event/alarm log (Date/Event), not numeric parameter trends. The viewer charts numeric data only.",
     starview:"Starview format · auto-converted", tooFew:"Too little active data (Freq>0).",
-    foot:"ESP Trend Viewer · standalone · SCADA + Starview" },
-  id:{title:"ESP Trend Viewer", sub:"grafik parameter interaktif · CSV SCADA & Starview",
-    eyebrow:"Sumber data · time-series sensor", droptitle:"Lepas file CSV di sini",
-    dropsub:"atau klik untuk memilih · format SCADA-flat & Starview dideteksi otomatis",
-    drophint:"nama kolom bebas (PIP, Intake Pressure, Amps, …) dikenali otomatis",
+    foot:"ESP Trend Viewer · standalone · SCADA + Starview + HDF5" },
+  id:{title:"ESP Trend Viewer", sub:"grafik parameter interaktif · CSV SCADA & Starview & HDF5",
+    eyebrow:"Sumber data · time-series sensor", droptitle:"Lepas file CSV atau H5 di sini",
+    dropsub:"atau klik untuk memilih · format CSV (SCADA-flat & Starview) & HDF5 dideteksi otomatis",
+    drophint:"CSV: nama kolom bebas dikenali · H5: auto-deteksi dataset numerik",
     charthint:"Scroll/drag untuk zoom · klik item legenda untuk sembunyikan · arahkan kursor untuk nilai",
-    resetZoom:"Reset zoom", exportPng:"Ekspor PNG", statshead:"Statistik parameter", hide:"Sembunyikan", show:"Tampilkan", pickerHead:"Parameter ditampilkan", selAll:"semua", selNone:"kosong",
+    resetZoom:"Reset zoom", exportCsv:"Ekspor CSV", exportPng:"Ekspor PNG", statshead:"Statistik parameter", hide:"Sembunyikan", show:"Tampilkan", pickerHead:"Parameter ditampilkan", selAll:"semua", selNone:"kosong",
     cParam:"Parameter", cN:"n", cMin:"min", cMax:"maks", cAvg:"rata", cLast:"akhir", cDelta:"Δ%",
     activePoints:"titik", range:"rentang", hours:"jam", days:"hari",
-    errEmpty:"CSV kosong.", errNoCols:"Tidak ada kolom parameter yang dikenali. Cek header.",
+    errEmpty:"File kosong.", errNoCols:"Tidak ada kolom parameter yang dikenali. Cek header.",
     errRead:"Gagal membaca file.", errStarview:"Format Starview terdeteksi tapi gagal diurai.", errEventLog:"Ini tampak seperti log event/alarm VSD (Date/Event), bukan tren parameter numerik. Viewer hanya membuat grafik data numerik.",
     starview:"Format Starview · dikonversi otomatis", tooFew:"Data aktif (Freq>0) terlalu sedikit.",
-    foot:"ESP Trend Viewer · mandiri · SCADA + Starview" }
+    foot:"ESP Trend Viewer · mandiri · SCADA + Starview + HDF5" }
 };
 const t=k=>T[LANG][k]??k;
 
@@ -420,11 +422,43 @@ function applyLang(){
   const set=(id,k)=>{const el=document.getElementById(id); if(el) el.textContent=t(k);};
   set('t-title','title'); set('t-sub','sub'); set('t-eyebrow','eyebrow');
   set('t-droptitle','droptitle'); set('t-dropsub','dropsub'); set('t-drophint','drophint');
-  set('t-charthint','charthint'); set('resetZoom','resetZoom'); set('exportPng','exportPng'); set('t-statshead','statshead');
+  set('t-charthint','charthint'); set('resetZoom','resetZoom'); set('exportCsv','exportCsv'); set('exportPng','exportPng'); set('t-statshead','statshead');
   { const st=document.getElementById('t-statstoggle'); if(st) st.textContent=t(statsOpen?'hide':'show'); }
   set('foot','foot');
   document.querySelectorAll('#langToggle button').forEach(b=>b.classList.toggle('on',b.dataset.lang===LANG));
   if(FULLRES) refresh();
+}
+
+/* ---------- H5 file parsing ---------- */
+async function parseH5(arrayBuffer){
+  try{
+    const h5 = new hicl.h5wasm.HDF5(new Uint8Array(arrayBuffer));
+    const datasets={}; const times=[];
+    
+    function walkGroup(group, path=''){
+      try{
+        const keys=Object.keys(group);
+        for(const key of keys){
+          const item=group[key];
+          const fullPath=path+'/'+key;
+          if(item instanceof hicl.h5wasm.Dataset){
+            try{
+              const data=item.slice(); const typed=new Float64Array(data.buffer);
+              if(typed.length>0){ datasets[key]={data:Array.from(typed), length:typed.length}; }
+            }catch(e){}
+          }else if(item instanceof hicl.h5wasm.Group){ walkGroup(item, fullPath); }
+        }
+      }catch(e){}
+    }
+    walkGroup(h5);
+    
+    if(Object.keys(datasets).length<2) throw new Error('No numeric datasets found in H5 file');
+    const maxLen=Math.max(...Object.values(datasets).map(d=>d.length));
+    const data=[]; for(let i=0;i<maxLen;i++){
+      const row={}; for(const k in datasets){ row[k]=datasets[k].data[i]||NaN; } data.push(row);
+    }
+    return {data, fields:Object.keys(datasets)};
+  }catch(e){ throw new Error('H5 parse error: '+e.message); }
 }
 
 /* ---------- file handling ---------- */
@@ -432,6 +466,12 @@ function showErr(m){ const e=document.getElementById('err'); e.textContent='⚠ 
 function handleFile(f){
   document.getElementById('err').classList.add('hidden');
   document.getElementById('status').innerHTML=`<b>${f.name}</b>`;
+  
+  if(/\.h5$/i.test(f.name) || /\.hdf5$/i.test(f.name)){ handleH5File(f); }
+  else{ handleCSVFile(f); }
+}
+
+function handleCSVFile(f){
   const reader=new FileReader();
   reader.onerror=()=>showErr(t('errRead'));
   reader.onload=()=>{
@@ -449,6 +489,48 @@ function handleFile(f){
   reader.readAsText(f);
 }
 
+function handleH5File(f){
+  const reader=new FileReader();
+  reader.onerror=()=>showErr(t('errRead'));
+  reader.onload=async ()=>{
+    try{
+      const parsed=await parseH5(reader.result);
+      if(!parsed.data.length) throw new Error(t('errEmpty'));
+      const res=buildSeries(parsed.data,parsed.fields,'h5',false);
+      if(!res.stats.length) throw new Error('No numeric columns found in H5 file');
+      showResult(res);
+    }catch(e){ showErr(e.message); }
+  };
+  reader.readAsArrayBuffer(f);
+}
+
+/* ---------- export ---------- */
+function exportCSV(){
+  if(!FULLRES || !FULLRES.chart) return;
+  const {labels, data}=FULLRES.chart;
+  const fields=Object.keys(data);
+  if(!fields.length) return;
+  
+  const rows=[fields]; // header
+  const maxLen=Math.max(...fields.map(f=>data[f].length));
+  for(let i=0;i<maxLen;i++){
+    const row=[];
+    for(const f of fields){
+      const v=data[f][i];
+      row.push((v!==null && v===v)?v:'');
+    }
+    rows.push(row);
+  }
+  
+  const csv=rows.map(r=>r.map(c=>typeof c==='string'&&c.includes(',')?'"'+c+'"':c).join(',')).join('\n');
+  const blob=new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const link=document.createElement('a');
+  link.href=URL.createObjectURL(blob);
+  link.download='esp-trend.csv';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 /* ---------- wiring ---------- */
 try{ const zp=window.ChartZoom||window.chartjsPluginZoom||window['chartjs-plugin-zoom'];
   if(zp && window.Chart && Chart.register) Chart.register(zp.default||zp); }catch(e){}
@@ -459,6 +541,7 @@ drop.addEventListener('click',()=>fileInput.click());
 drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
 fileInput.addEventListener('change',e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
 document.getElementById('resetZoom').addEventListener('click',()=>{ if(chart&&chart.resetZoom) chart.resetZoom(); });
+document.getElementById('exportCsv').addEventListener('click',exportCSV);
 document.getElementById('exportPng').addEventListener('click',()=>{
   if(!chart)return; const a=document.createElement('a');
   a.href=chart.toBase64Image('image/png',1); a.download='esp-trend.png'; a.click();
