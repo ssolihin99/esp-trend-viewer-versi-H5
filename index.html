@@ -10,11 +10,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-<script type="module">
-  // Load h5wasm (mendukung deflate/gzip compression yang dipakai file Instruct)
-  import h5wasm from "https://cdn.jsdelivr.net/npm/h5wasm@0.7.0/dist/esm/hdf5_hl.js";
-  window.h5wasmReady = h5wasm.ready.then(m => { window.h5wasm = h5wasm; window.h5wasmFS = m.FS; return h5wasm; });
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 <style>
 :root{
@@ -433,118 +428,110 @@ function applyLang(){
   if(FULLRES) refresh();
 }
 
-/* ---------- H5 file parsing (h5wasm, mendukung deflate/gzip) ---------- */
-// Mapping nama parameter Instruct → nama pendek ESP standar
-const H5_NAME_MAP={
-  'DHIntakePressure':'Pi', 'DHDischargePressure':'Pd', 'DHDifferentialPressure':'dP',
-  'DHIntakeTemp':'Ti', 'DHMotorTemp':'Tm', 'DHDischargeTemperature':'Td',
-  'DHVibration':'Vib', 'DHVibrationAX1':'VibX', 'DHVibrationAY1':'VibY', 'DHVibrationAZ1':'VibZ',
-  'VsdAmps':'Amps', 'VsdMotAmps':'MotAmps', 'VsdFreqOut':'Freq',
-  'PIC1 Flow Live':'Q', 'VSD Volts Out':'Vout', 'VSD Volts In':'Vin',
-  'VSD Power In':'Pin', 'VSD Power Out':'Pout', 'VSDG7 Load':'Load',
-  'Casing Head Pressure':'CHP'
-};
-function h5shortName(rawName){
-  if(H5_NAME_MAP[rawName]) return H5_NAME_MAP[rawName];
-  // Bersihkan prefix path
-  const base=rawName.split('/').pop();
-  return H5_NAME_MAP[base] || base;
+/* ---------- H5 file parsing (h5wasm — port dari esp-diagnosa-H5 yang teruji) ---------- */
+// Parameter yang diambil dari Non-Conforming Time Series
+const H5_DESIRED = new Set([
+  'DHDischargePressure','DHDischargeTemperature','DHDifferentialPressure',
+  'DHIntakePressure','DHIntakePressure2','DHIntakeTemp','DHMotorTemp','DHMotorYpoint',
+  'DHVibration','DHVibrationAX1','DHVibrationAY1','DHVibrationAZ1','DHVibrationY','DHVibrationZ',
+  'DH Cf','DH Cz','VsdFreqOut','VsdAmps','VsdMotAmps','VSD Power In','VSD Power Out',
+  'VSD Volts In','VSD Volts Out','VSD Torque Percentage Live','VSDG7 Load','VSDG7 Speed Cmd WR',
+  'Motor Load','Starts','Temperature','SupplyVolts','Drive Run Status','COS PHI Live',
+  'Active Current Leakage','Passive Current Leakage',
+  'PIC1 Flow Live','Casing Head Pressure',
+]);
+// Mapping nama panjang Instruct → nama pendek (opsional, tidak dipakai — canon() yang memetakan)
+const H5_PSI = 0.0001450377;  // Pa -> PSI
+const H5_K2C = 273.15;        // K -> °C
+
+let _h5lib=null, _h5fs=null;
+async function ensureH5(){
+  if(_h5lib) return;
+  const mod = await import('https://cdn.jsdelivr.net/npm/h5wasm@0.10.1/dist/esm/hdf5_hl.js');
+  const h5wasm = mod.default ?? mod;
+  const Module = await h5wasm.ready;   // FS ada di Module
+  _h5lib = h5wasm; _h5fs = Module.FS;
 }
 
-function walkH5(group, cb, path=''){
-  let keys=[];
-  try{ keys=group.keys(); }catch(e){ return; }
-  for(const key of keys){
-    let item;
-    try{ item=group.get(key); }catch(e){ continue; }
-    if(!item) continue;
-    const fullPath = path ? path+'/'+key : '/'+key;
-    // Dataset: punya .shape (array). Group: punya .keys (function)
-    if(typeof item.keys==='function'){ walkH5(item, cb, fullPath); }
-    else if(item.shape!==undefined){ cb(fullPath, key, item); }
-  }
-}
-
-async function parseH5(arrayBuffer, filename){
-  if(!window.h5wasmReady) throw new Error('H5 library masih dimuat, coba lagi sebentar…');
-  await window.h5wasmReady;
-  const h5=window.h5wasm, FS=window.h5wasmFS;
-  const tmpName='__upload__.h5';
-  FS.writeFile(tmpName, new Uint8Array(arrayBuffer));
-  let f;
+async function parseH5(arrayBuffer){
+  await ensureH5();
+  const path='/in.h5';
+  try{ _h5fs.unlink(path); }catch(_){}
+  _h5fs.writeFile(path, new Uint8Array(arrayBuffer));
+  const f = new _h5lib.File(path, 'r');
   try{
-    f=new h5.File(tmpName, 'r');
-    // Kumpulkan semua dataset numerik 1D. Untuk Non-Conforming Time Series,
-    // tiap parameter adalah group berisi 'value' (+ 'time') → ambil 'value'.
-    const params={};   // shortName → {value:[], time:[] }
-    const rawDatasets={}; // fallback: path → array
+    const g = f.get('Non-Conforming Time Series');
+    if(!g) throw new Error("Group 'Non-Conforming Time Series' tidak ditemukan — pastikan file dari Instruct VSD controller.");
 
-    walkH5(f, (fullPath, key, ds)=>{
-      let val;
-      try{ val=ds.value; }catch(e){ return; }
-      if(!val || val.length===undefined || val.length===0) return;
-      // Konversi ke number array (skip non-numeric)
-      let arr;
-      if(typeof val[0]==='number'){ arr=Array.from(val); }
-      else if(typeof val[0]==='bigint'){ arr=Array.from(val, x=>Number(x)); }
-      else return;
-      rawDatasets[fullPath]={key, arr};
-    });
+    const tags = {};   // rawName(panjang) -> {t:number[](ms), v:number[]}
+    for(const name of g.keys()){
+      if(!H5_DESIRED.has(name)) continue;
+      const ds = g.get(name);
+      const meta = ds.metadata ?? {};
+      const members = meta.compound_type?.members?.map(m=>m.name);
+      if(!members || !members.includes('time') || !members.includes('value')) continue;
+      const ti = members.indexOf('time'), vi = members.indexOf('value');
+      const rows = ds.value;
+      if(!rows || !rows.length) continue;
 
-    // Grouping: cari pola ".../<Param>/value" dan ".../<Param>/time"
-    const groups={};
-    for(const path in rawDatasets){
-      const m=path.match(/^(.*)\/(value|time|Value|Time)$/);
-      if(m){
-        const parent=m[1], kind=m[2].toLowerCase();
-        (groups[parent]=groups[parent]||{})[kind]=rawDatasets[path].arr;
+      const n = rows.length;
+      const tArr = new Float64Array(n), vArr = new Float64Array(n);
+      const isPress = name.includes('Pressure');
+      const isTemp = name.includes('Temp') || name.includes('Temperature');
+      for(let i=0;i<n;i++){
+        const row = rows[i];
+        let tv = Array.isArray(row) ? row[ti] : (row.time ?? row[ti]);
+        let vv = Array.isArray(row) ? row[vi] : (row.value ?? row[vi]);
+        tv = Number(tv); vv = Number(vv);
+        if(isPress) vv *= H5_PSI;
+        else if(isTemp) vv -= H5_K2C;
+        tArr[i] = tv * 1000;   // unix s -> ms
+        vArr[i] = vv;
       }
-    }
-
-    let fields=[], columns={};
-    if(Object.keys(groups).length>=2){
-      // Struktur time-series (Non-Conforming): pakai value per parameter
-      for(const parent in groups){
-        const g=groups[parent];
-        if(!g.value || g.value.length<3) continue;  // skip yang terlalu pendek
-        const rawName=parent.split('/').pop();
-        let name=h5shortName(rawName);
-        // hindari duplikat nama
-        if(columns[name]) name=rawName;
-        columns[name]=g.value;
-        fields.push(name);
+      // urutkan by time bila perlu
+      let sorted = true;
+      for(let i=1;i<n;i++) if(tArr[i] < tArr[i-1]){ sorted=false; break; }
+      let tOut, vOut;
+      if(!sorted){
+        const idx = Array.from(tArr.keys()).sort((a,b)=>tArr[a]-tArr[b]);
+        tOut = idx.map(i=>tArr[i]); vOut = idx.map(i=>vArr[i]);
+      } else {
+        tOut = Array.from(tArr); vOut = Array.from(vArr);
       }
+      // pakai nama panjang asli → biar canon() memetakan seperti jalur CSV
+      tags[name] = { t:tOut, v:vOut };
     }
-    // Fallback: kalau grouping value/time tidak menghasilkan cukup kolom,
-    // ambil semua dataset numerik 1D yang cukup panjang (>=5 titik)
-    if(fields.length<2){
-      fields=[]; columns={};
-      for(const path in rawDatasets){
-        const arr=rawDatasets[path].arr;
-        if(arr.length<5) continue;
-        // skip dataset 'time' murni (biasanya monoton naik & besar)
-        const rawName=rawDatasets[path].key;
-        if(/^time$/i.test(rawName)) continue;
-        let name=h5shortName(rawName);
-        if(columns[name]) name=path.replace(/^\//,'').replace(/\//g,'_');
-        columns[name]=arr;
-        fields.push(name);
+    if(!Object.keys(tags).length) throw new Error('Tidak ada parameter time-series numerik yang cocok di file H5.');
+
+    // Bangun grid gabungan timestamp + forward-fill (seperti esp-diagnosa-H5)
+    const all=[];
+    for(const s of Object.values(tags)) for(let i=0;i<s.t.length;i++) all.push(s.t[i]);
+    const times = Float64Array.from([...new Set(all)].sort((a,b)=>a-b));
+
+    const series={};
+    for(const [p,s] of Object.entries(tags)){
+      const out = new Float64Array(times.length).fill(NaN);
+      let j=0;
+      for(let i=0;i<times.length;i++){
+        while(j<s.t.length && s.t[j]<=times[i]) j++;
+        if(j>0) out[i]=s.v[j-1];   // ffill
       }
+      let firstIdx = out.findIndex(Number.isFinite);
+      if(firstIdx>0) out.fill(out[firstIdx],0,firstIdx);   // bfill kepala
+      series[p]=out;
     }
 
-    if(fields.length<2) throw new Error('No numeric datasets found in H5 file (found '+fields.length+')');
-
-    const maxLen=Math.max(...fields.map(k=>columns[k].length));
-    const rows=[];
-    for(let i=0;i<maxLen;i++){
-      const row={};
-      for(const k of fields){ const v=columns[k][i]; row[k]=(v!==undefined && v!==null)?v:NaN; }
-      rows.push(row);
+    // Bangun rows untuk buildSeries: {Reading Time, <rawName>...}
+    const fields=Object.keys(series);
+    const data=[];
+    for(let i=0;i<times.length;i++){
+      const row={ 'Reading Time': new Date(times[i]).toISOString() };
+      for(const k of fields){ const v=series[k][i]; row[k]=Number.isFinite(v)?v:NaN; }
+      data.push(row);
     }
-    return {data:rows, fields};
+    return { data, fields:['Reading Time', ...fields] };
   } finally {
-    try{ if(f) f.close(); }catch(e){}
-    try{ FS.unlink(tmpName); }catch(e){}
+    try{ f.close(); }catch(_){}
   }
 }
 
@@ -599,11 +586,14 @@ function exportCSV(){
   const {labels, data}=FULLRES.chart;
   const fields=Object.keys(data);
   if(!fields.length) return;
-  
-  const rows=[fields]; // header
+
+  const hasTime = Array.isArray(labels) && labels.length;
+  const header = hasTime ? ['time', ...fields] : fields;
+  const rows=[header];
   const maxLen=Math.max(...fields.map(f=>data[f].length));
   for(let i=0;i<maxLen;i++){
     const row=[];
+    if(hasTime) row.push(labels[i]!=null?labels[i]:'');
     for(const f of fields){
       const v=data[f][i];
       row.push((v!==null && v===v)?v:'');
