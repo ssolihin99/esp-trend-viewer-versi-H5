@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP Diagnosa H5 — Instruct Fault Signature Analyzer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.2.0/chartjs-plugin-zoom.min.js"></script>
+<style>
+/* ============================================================
+   Design tokens — tema instrumentasi / control-room surveillance
+   ============================================================ */
+:root{
+  --bg:#0C1116;            /* layar SCADA gelap */
+  --panel:#141B22;
+  --panel-2:#101820;
+  --line:#223041;
+  --text:#D7E1EA;
+  --dim:#7A8CA0;
+  --amber:#FFB020;         /* readout display VSD */
+  --ok:#35D07F;
+  --danger:#FF5A52;
+  --cyan:#57C7FF;
+  --violet:#B48CFF;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --disp:'IBM Plex Sans Condensed',var(--sans);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.55}
+body{min-height:100vh}
+a{color:var(--cyan)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+
+/* ---------- header ---------- */
+header.app{
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,#101820 0%,#0C1116 100%);
+  position:sticky;top:0;z-index:20;
+}
+.app-bar{max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.app-mark{
+  font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.12em;
+  color:var(--amber);border:1px solid var(--amber);border-radius:4px;padding:4px 8px;
+}
+h1{font-family:var(--disp);font-weight:700;font-size:20px;letter-spacing:.02em}
+.app-sub{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-left:auto}
+.lang-sw{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.lang-sw button{
+  background:transparent;border:0;color:var(--dim);font-family:var(--mono);font-size:12px;
+  padding:5px 12px;cursor:pointer;
+}
+.lang-sw button.on{background:var(--amber);color:#111}
+.lang-sw button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px}
+
+/* ---------- toolbar / dropzone ---------- */
+.toolbar{display:grid;grid-template-columns:1fr auto;gap:16px;margin:26px 0 18px;align-items:stretch}
+@media(max-width:760px){.toolbar{grid-template-columns:1fr}}
+.dropzone{
+  border:1.5px dashed var(--line);border-radius:10px;background:var(--panel-2);
+  padding:26px 22px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;
+}
+.dropzone:hover,.dropzone.drag{border-color:var(--amber);background:#151E27}
+.dropzone .dz-title{font-family:var(--disp);font-weight:600;font-size:17px}
+.dropzone .dz-hint{color:var(--dim);font-size:13px;margin-top:4px}
+.dropzone .dz-file{font-family:var(--mono);font-size:13px;color:var(--amber);margin-top:8px;word-break:break-all}
+.controls{display:flex;flex-direction:column;gap:10px;justify-content:center;min-width:220px}
+.controls label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
+.controls select{
+  background:var(--panel);border:1px solid var(--line);color:var(--text);
+  font-family:var(--mono);font-size:13px;border-radius:6px;padding:8px 10px;width:100%;
+}
+.controls select:focus-visible{outline:2px solid var(--cyan)}
+
+/* ---------- status / error ---------- */
+.status{font-family:var(--mono);font-size:13px;color:var(--dim);padding:10px 0;min-height:38px}
+.status .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--amber);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.status .spin{animation:none}}
+.err{
+  border:1px solid var(--danger);border-left-width:4px;border-radius:8px;
+  background:#1A1114;padding:14px 16px;margin:14px 0;font-size:14px;
+}
+.err b{color:var(--danger)}
+.err code{font-family:var(--mono);background:#0C1116;padding:1px 6px;border-radius:4px}
+
+/* ---------- annunciator strip (elemen tanda tangan) ---------- */
+.annunciator{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px;margin:8px 0 26px}
+.ann{
+  background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:10px 12px;position:relative;overflow:hidden;
+}
+.ann::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--dim)}
+.ann.up::before{background:var(--cyan)} .ann.down::before{background:var(--violet)}
+.ann.alarm::before{background:var(--danger)}
+.ann .tag{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim)}
+.ann .glyph{font-family:var(--mono);font-weight:600;font-size:22px;line-height:1.15}
+.ann .dpct{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.ann .sigch{
+  display:inline-block;margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  border:1px solid var(--line);border-radius:3px;padding:1px 6px;color:var(--amber);text-transform:uppercase;
+}
+
+/* ---------- kartu diagnosa ---------- */
+section h2{font-family:var(--disp);font-weight:600;font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin:26px 0 10px}
+.diag-top{
+  background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
+  border-radius:10px;padding:18px 20px;
+}
+.diag-top .dt-id{font-family:var(--mono);font-size:12px;color:var(--amber);letter-spacing:.1em}
+.diag-top .dt-name{font-family:var(--disp);font-weight:700;font-size:26px;margin:2px 0 8px}
+.scorebar{display:flex;align-items:center;gap:12px}
+.scorebar .bar{flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden}
+.scorebar .bar i{display:block;height:100%;background:var(--amber)}
+.scorebar .val{font-family:var(--mono);font-weight:600;font-size:20px;color:var(--amber);min-width:64px;text-align:right}
+.badges{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:11px;letter-spacing:.06em;border-radius:4px;padding:3px 9px;border:1px solid var(--line);color:var(--dim)}
+.badge.warn{border-color:var(--amber);color:var(--amber)}
+.badge.trip{border-color:var(--danger);color:var(--danger)}
+.cands{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.cand{
+  display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:9px 14px;font-size:14px;
+}
+.cand .c-id{font-family:var(--mono);font-size:11.5px;color:var(--dim);min-width:64px}
+.cand .c-pct{font-family:var(--mono);margin-left:auto;color:var(--text)}
+.cand .c-gate{font-family:var(--mono);font-size:11px;color:var(--danger)}
+.note{border:1px solid var(--line);border-left:4px solid var(--cyan);background:var(--panel-2);border-radius:8px;padding:10px 14px;font-size:13.5px;margin-top:8px;color:var(--dim)}
+
+/* ---------- bukti ---------- */
+table.evid{width:100%;border-collapse:collapse;font-size:13.5px}
+table.evid th{
+  text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--dim);
+  text-transform:uppercase;border-bottom:1px solid var(--line);padding:7px 10px;
+}
+table.evid td{border-bottom:1px solid #1A2430;padding:7px 10px;font-family:var(--mono);font-size:13px}
+table.evid td.p{color:var(--text)} 
+table.evid .ok{color:var(--ok)} table.evid .part{color:var(--amber)} table.evid .no{color:var(--danger)}
+.prose{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 18px;font-size:14.5px}
+.prose+.prose{margin-top:10px}
+.prose b{font-family:var(--disp);letter-spacing:.04em}
+
+/* ---------- grafik ---------- */
+.chart-tools{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.chart-tools label{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  font-family:var(--mono);font-size:12px;border:1px solid var(--line);border-radius:14px;
+  background:transparent;color:var(--dim);padding:4px 12px;cursor:pointer;
+}
+.chip.on{border-color:var(--amber);color:var(--amber)}
+.chip:focus-visible{outline:2px solid var(--cyan)}
+.chart-cell{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px 6px;margin-bottom:10px}
+.chart-cell .cc-title{font-family:var(--mono);font-size:12px;color:var(--dim);margin-bottom:4px}
+.chart-cell canvas{width:100%!important;height:340px!important}
+.chart-cell.tall canvas{height:640px!important}
+.zoom-hint{font-family:var(--mono);font-size:11px;color:var(--dim);margin:2px 0 10px}
+
+/* ---------- export ---------- */
+.btn{
+  font-family:var(--mono);font-size:13px;background:var(--amber);color:#131313;border:0;
+  border-radius:6px;padding:9px 16px;cursor:pointer;font-weight:600;
+}
+.btn.ghost{background:transparent;color:var(--amber);border:1px solid var(--amber)}
+.btn:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hidden{display:none!important}
+footer{color:var(--dim);font-family:var(--mono);font-size:11.5px;border-top:1px solid var(--line);margin-top:44px;padding-top:14px}
+.watermark{
+  position:fixed;right:10px;bottom:8px;z-index:50;pointer-events:none;
+  font-family:var(--mono);font-size:10px;letter-spacing:.05em;
+  color:var(--dim);opacity:.45;user-select:none;
+}
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="app-bar">
+    <span class="app-mark">ESP·H5</span>
+    <h1 data-i18n="title">ESP Diagnosa H5</h1>
+    <span class="app-sub" id="sigVer">signatures.json …</span>
+    <div class="lang-sw" role="group" aria-label="Language">
+      <button id="langId" class="on">ID</button>
+      <button id="langEn">EN</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- toolbar -->
+  <div class="toolbar">
+    <div class="dropzone" id="dropzone" tabindex="0" role="button">
+      <div class="dz-title" data-i18n="dzTitle">Tarik & letakkan file Instruct .h5 di sini</div>
+      <div class="dz-hint" data-i18n="dzHint">atau klik untuk memilih file — diproses sepenuhnya di browser, tidak diunggah ke mana pun</div>
+      <div class="dz-file" id="dzFile"></div>
+      <input type="file" id="fileInput" accept=".h5,.hdf5" class="hidden">
+    </div>
+    <div class="controls">
+      <div>
+        <label for="winSel" data-i18n="winLabel">Jendela analisa</label>
+        <select id="winSel">
+          <option value="all" data-i18n="winAll">Seluruh data</option>
+          <option value="72">72 jam terakhir</option>
+          <option value="24">24 jam terakhir</option>
+          <option value="12">12 jam terakhir</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+  <div id="errBox"></div>
+
+  <!-- hasil -->
+  <div id="results" class="hidden">
+
+    <section>
+      <h2 data-i18n="hAnn">Panel parameter</h2>
+      <div class="annunciator" id="annunciator"></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="hDiag">Diagnosa</h2>
+      <div class="diag-top" id="diagTop"></div>
+      <div class="cands" id="cands"></div>
+      <div id="gateNotes"></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="hEvid">Bukti per parameter</h2>
+      <div class="prose" style="padding:0;overflow-x:auto">
+        <table class="evid" id="evidTable"></table>
+      </div>
+    </section>
+
+    <section>
+      <h2 data-i18n="hInterp">Interpretasi & rekomendasi</h2>
+      <div class="prose" id="narasi"></div>
+      <div class="prose" id="rekom"></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="hChart">Grafik tren</h2>
+      <div class="chart-tools">
+        <div class="lang-sw" role="group" aria-label="Layout">
+          <button id="layoutSep" class="on">▤</button>
+          <button id="layoutComb">▬</button>
+        </div>
+        <span id="layoutLabel" style="font-family:var(--mono);font-size:12px;color:var(--dim)"></span>
+        <button class="chip" id="pctToggle" style="display:none"></button>
+        <label data-i18n="chartPick">Parameter:</label>
+        <div class="chip-row" id="paramChips"></div>
+      </div>
+      <div class="zoom-hint" id="zoomHint"></div>
+      <div id="charts"></div>
+    </section>
+
+    <section>
+      <h2 data-i18n="hExport">Data</h2>
+      <button class="btn" id="btnCsv" data-i18n="btnCsv">Unduh CSV kanonik</button>
+      <span class="note" style="display:inline-block;margin-left:10px" data-i18n="csvNote">Format sama dengan input CSV esp-diagnosa-app.</span>
+    </section>
+
+  </div>
+
+  <footer>
+    ESP Diagnosa H5 · engine &amp; katalog: signatures.json (single source of truth, sama dengan esp-diagnosa-app CSV) · parsing H5 client-side via h5wasm
+  </footer>
+</div>
+
+<div class="watermark">ssolihin99@gmail.com</div>
+
+<script src="engine.js"></script>
+<script type="module">
+/* ============================================================
+   ESP Diagnosa H5 — UI + parsing (engine ada di engine.js)
+   ============================================================ */
+
+// ---------- i18n ----------
+const I18N = {
+  id: {
+    title:'ESP Diagnosa H5', dzTitle:'Tarik & letakkan file Instruct .h5 di sini',
+    dzHint:'atau klik untuk memilih file — diproses sepenuhnya di browser, tidak diunggah ke mana pun',
+    winLabel:'Jendela analisa', winAll:'Seluruh data', winH:(h)=>`${h} jam terakhir`,
+    hAnn:'Panel parameter', hDiag:'Diagnosa', hEvid:'Bukti per parameter',
+    hInterp:'Interpretasi & rekomendasi', hChart:'Grafik tren', hExport:'Data',
+    btnCsv:'Unduh CSV kanonik', csvNote:'Format sama dengan input CSV esp-diagnosa-app.',
+    loading:'Memuat engine HDF5 (h5wasm)…', parsing:'Membaca file H5…',
+    diagnosing:'Menjalankan diagnosa…',
+    conf:{high:'tinggi',med:'sedang',low:'rendah'}, confL:'keyakinan',
+    operator:'Aksi operator — cek log setpoint/choke, bukan kegagalan',
+    trip:'TRIP terdeteksi (Amps → ~0)', freqComp:(p)=>`Kompensasi frekuensi aktif — tren dinilai dari nilai ternormalisasi: ${p}`,
+    gatedTxt:(id,name,raw,now,why)=>`${id} ${name}: ${raw}% → ${now}% — ${why}.`,
+    whySudden:'tren teramati gradual, case ini mendadak',
+    whyGradual:'tren teramati mendadak, case ini gradual',
+    pace:{sudden:'mendadak (step)',gradual:'gradual (drift)',any:'campuran'},
+    win:(d,p)=>`Jendela: ${d.toFixed(1)} jam · Pola waktu: ${p}`,
+    evidCols:['Parameter','Teramati','Ekspektasi','Status'],
+    evOk:'cocok', evPart:'parsial', evNo:'menyimpang', keyMark:'kunci',
+    layoutSep:'Terpisah per parameter', layoutComb:'Gabung (1 grafik)',
+    pctOn:'⚖ Persentase: AKTIF', pctOff:'⚖ Persentase: mati',
+    zoomHint:'scroll = zoom · drag = geser · dobel-klik = reset',
+    missing:(m)=>`Parameter tidak tersedia: ${m}`,
+    normMark:(r)=>` (norm/${r})`,
+    errH5:'File tidak dapat dibaca sebagai Instruct H5.',
+    errGroup:"Group 'Non-Conforming Time Series' tidak ditemukan — pastikan file berasal dari Instruct VSD controller.",
+    errNoTags:'Tidak ada tag yang cocok dengan master list di file ini.',
+    errSig:'signatures.json tidak dapat dimuat.',
+    errSigFix:'Jalankan lewat server lokal (mis. <code>python -m http.server</code> lalu buka <code>http://localhost:8000</code>) atau deploy ke GitHub Pages — membuka file HTML langsung (file://) memblokir pemuatan JSON.',
+  },
+  en: {
+    title:'ESP Diagnosa H5', dzTitle:'Drag & drop an Instruct .h5 file here',
+    dzHint:'or click to choose — processed entirely in your browser, nothing is uploaded',
+    winLabel:'Analysis window', winAll:'All data', winH:(h)=>`Last ${h} hours`,
+    hAnn:'Parameter panel', hDiag:'Diagnosis', hEvid:'Evidence per parameter',
+    hInterp:'Interpretation & recommendation', hChart:'Trend charts', hExport:'Data',
+    btnCsv:'Download canonical CSV', csvNote:'Same format as esp-diagnosa-app CSV input.',
+    loading:'Loading HDF5 engine (h5wasm)…', parsing:'Reading H5 file…',
+    diagnosing:'Running diagnosis…',
+    conf:{high:'high',med:'medium',low:'low'}, confL:'confidence',
+    operator:'Operator action — check setpoint/choke logs, not a failure',
+    trip:'TRIP detected (Amps → ~0)', freqComp:(p)=>`Frequency compensation active — trends scored on normalized values: ${p}`,
+    gatedTxt:(id,name,raw,now,why)=>`${id} ${name}: ${raw}% → ${now}% — ${why}.`,
+    whySudden:'observed trend is gradual, this case is sudden',
+    whyGradual:'observed trend is sudden, this case is gradual',
+    pace:{sudden:'sudden (step)',gradual:'gradual (drift)',any:'mixed'},
+    win:(d,p)=>`Window: ${d.toFixed(1)} h · Temporal pattern: ${p}`,
+    evidCols:['Parameter','Observed','Expected','Status'],
+    evOk:'match', evPart:'partial', evNo:'deviates', keyMark:'key',
+    layoutSep:'Separate per parameter', layoutComb:'Combined (1 chart)',
+    pctOn:'⚖ Percentage: ON', pctOff:'⚖ Percentage: off',
+    zoomHint:'scroll = zoom · drag = pan · double-click = reset',
+    missing:(m)=>`Parameters not available: ${m}`,
+    normMark:(r)=>` (norm/${r})`,
+    errH5:'File could not be read as an Instruct H5.',
+    errGroup:"Group 'Non-Conforming Time Series' not found — make sure the file comes from an Instruct VSD controller.",
+    errNoTags:'No tags in this file match the master list.',
+    errSig:'signatures.json could not be loaded.',
+    errSigFix:'Serve over a local server (e.g. <code>python -m http.server</code> then open <code>http://localhost:8000</code>) or deploy to GitHub Pages — opening the HTML directly (file://) blocks JSON loading.',
+  },
+};
+let lang = 'id';
+const t = () => I18N[lang];
+
+// ---------- konstanta parsing (dari converter Instruct yang terbukti) ----------
+const DESIRED = new Set([
+  'DHDischargePressure','DHDischargeTemperature','DHDifferentialPressure',
+  'DHIntakePressure','DHIntakeTemp','DHMotorTemp','DHMotorYpoint',
+  'DHVibration','DHVibrationAX1','DHVibrationAY1','DHVibrationAZ1','DHVibrationY','DHVibrationZ',
+  'DH Cf','DH Cz','VsdFreqOut','VsdAmps','VsdMotAmps','VSD Power In','VSD Power Out',
+  'VSD Volts In','VSD Volts Out','VSD Torque Percentage Live','VSDG7 Load','VSDG7 Speed Cmd WR',
+  'Motor Load','Starts','Temperature','SupplyVolts','Drive Run Status','COS PHI Live',
+  'Active Current Leakage','Passive Current Leakage',
+]);
+const H5_CANON_PRIORITY = {
+  Pi:['DHIntakePressure'], Pd:['DHDischargePressure'], dP:['DHDifferentialPressure'],
+  Ti:['DHIntakeTemp'], Tm:['DHMotorTemp'],
+  Vib:['DHVibration','DHVibrationY','DHVibrationZ','DHVibrationAX1','DHVibrationAY1','DHVibrationAZ1'],
+  Amps:['VsdMotAmps','VsdAmps'], Freq:['VsdFreqOut'],
+};
+const PSI = 0.0001450377;  // Pa -> PSI
+const K2C = 273.15;        // K -> °C
+
+// ---------- state ----------
+let SIG = null;          // signatures.json
+let h5 = null;           // h5wasm module
+let rawSeries = null;    // { canon: {t:Float64Array(ms), v:Float64Array} }
+let sourceMap = {};      // canon -> tag asal
+let grid = null;         // { times: Float64Array(ms), series: {canon: Float64Array} }
+let viewGrid = null;     // grid setelah dipotong jendela analisa — dipakai grafik & CSV
+let lastDiag = null;
+let charts = [];
+let chipsOn = new Set();
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------- muat signatures.json ----------
+async function loadSig() {
+  try {
+    const res = await fetch('signatures.json');
+    if (!res.ok) throw new Error(res.status);
+    SIG = await res.json();
+    $('sigVer').textContent = `signatures.json v${SIG.version} · ${SIG.signatures.length} fault signatures`;
+  } catch (e) {
+    showErr(`<b>${t().errSig}</b><br>${t().errSigFix}`);
+  }
+}
+
+// ---------- h5wasm (lazy load saat file pertama masuk) ----------
+async function ensureH5() {
+  if (h5) return h5;
+  setStatus(t().loading, true);
+  const mod = await import('https://cdn.jsdelivr.net/npm/h5wasm@0.10.1/dist/esm/hdf5_hl.js');
+  const h5wasm = mod.default ?? mod;
+  const Module = await h5wasm.ready;   // FS ada di Module, bukan di h5wasm
+  h5 = { lib: h5wasm, FS: Module.FS };
+  return h5;
+}
+
+// ---------- parsing H5 ----------
+async function parseH5(arrayBuffer) {
+  const H5 = await ensureH5();
+  setStatus(t().parsing, true);
+  const path = '/in.h5';
+  try { H5.FS.unlink(path); } catch (_) {}
+  H5.FS.writeFile(path, new Uint8Array(arrayBuffer));
+  const f = new H5.lib.File(path, 'r');
+  try {
+    const g = f.get('Non-Conforming Time Series');
+    if (!g) throw new Error(t().errGroup);
+
+    const tags = {};   // tag -> {t: number[](ms), v: number[]}
+    for (const name of g.keys()) {
+      if (!DESIRED.has(name)) continue;
+      const ds = g.get(name);
+      const meta = ds.metadata ?? {};
+      const members = meta.compound_type?.members?.map(m => m.name);
+      if (!members || !members.includes('time') || !members.includes('value')) continue;
+      const ti = members.indexOf('time'), vi = members.indexOf('value');
+      const rows = ds.value;
+      if (!rows || !rows.length) continue;
+
+      const n = rows.length;
+      const tArr = new Float64Array(n), vArr = new Float64Array(n);
+      const isPress = name.includes('Pressure');
+      const isTemp = name.includes('Temp') || name.includes('Temperature');
+      for (let i = 0; i < n; i++) {
+        const row = rows[i];
+        let tv = Array.isArray(row) ? row[ti] : (row.time ?? row[ti]);
+        let vv = Array.isArray(row) ? row[vi] : (row.value ?? row[vi]);
+        tv = Number(tv); vv = Number(vv);
+        if (isPress) vv *= PSI;
+        else if (isTemp) vv -= K2C;
+        tArr[i] = tv * 1000;   // unix s -> ms
+        vArr[i] = vv;
+      }
+      // urutkan by time bila perlu
+      let sorted = true;
+      for (let i = 1; i < n; i++) if (tArr[i] < tArr[i - 1]) { sorted = false; break; }
+      if (!sorted) {
+        const idx = Array.from(tArr.keys()).sort((a, b) => tArr[a] - tArr[b]);
+        tags[name] = { t: idx.map(i => tArr[i]), v: idx.map(i => vArr[i]) };
+      } else {
+        tags[name] = { t: Array.from(tArr), v: Array.from(vArr) };
+      }
+    }
+    if (!Object.keys(tags).length) throw new Error(t().errNoTags);
+    return tags;
+  } finally {
+    f.close();
+  }
+}
+
+// ---------- kanonisasi + grid ffill ----------
+function normName(s){ return s.toLowerCase().replace(/[^a-z]/g,''); }
+
+function buildCanonical(tags) {
+  const series = {}; sourceMap = {};
+  // prioritas eksplisit
+  for (const [canon, cands] of Object.entries(H5_CANON_PRIORITY)) {
+    for (const tag of cands) {
+      if (tags[tag] && tags[tag].v.some(Number.isFinite)) {
+        series[canon] = tags[tag]; sourceMap[canon] = tag; break;
+      }
+    }
+  }
+  // fallback alias signatures.json
+  const block = SIG.aliasBlocklist ?? [];
+  for (const [tag, data] of Object.entries(tags)) {
+    const key = normName(tag);
+    if (block.some(b => key.includes(b))) continue;
+    const canon = SIG.aliases[key];
+    if (canon && !series[canon]) { series[canon] = data; sourceMap[canon] = tag; }
+  }
+  return series;
+}
+
+function buildGrid(canonSeries) {
+  // union timestamps — pakai loop biasa, BUKAN push(...arr):
+  // spread pada array ratusan ribu elemen menyebabkan stack overflow
+  const all = [];
+  for (const s of Object.values(canonSeries)) {
+    for (let i = 0; i < s.t.length; i++) all.push(s.t[i]);
+  }
+  const times = Float64Array.from([...new Set(all)].sort((a, b) => a - b));
+
+  const series = {};
+  for (const [p, s] of Object.entries(canonSeries)) {
+    const out = new Float64Array(times.length).fill(NaN);
+    let j = 0;
+    for (let i = 0; i < times.length; i++) {
+      while (j < s.t.length && s.t[j] <= times[i]) j++;
+      if (j > 0) out[i] = s.v[j - 1];               // ffill
+    }
+    // bfill kepala
+    let firstIdx = out.findIndex(Number.isFinite);
+    if (firstIdx > 0) out.fill(out[firstIdx], 0, firstIdx);
+    series[p] = out;
+  }
+  // turunkan dP = Pd - Pi bila belum ada
+  if (!series.dP && series.Pd && series.Pi) {
+    const d = new Float64Array(times.length);
+    for (let i = 0; i < times.length; i++) d[i] = series.Pd[i] - series.Pi[i];
+    series.dP = d; sourceMap.dP = 'derived: Pd − Pi';
+  }
+  return { times, series };
+}
+
+function sliceWindow(g, hours) {
+  if (hours === 'all') return g;
+  const cutoff = g.times[g.times.length - 1] - Number(hours) * 3.6e6;
+  let start = g.times.findIndex(x => x >= cutoff);
+  if (start < 0) start = 0;
+  const times = g.times.slice(start);
+  const series = {};
+  for (const [p, v] of Object.entries(g.series)) series[p] = v.slice(start);
+  return { times, series };
+}
+
+// ---------- render ----------
+function setStatus(msg, busy=false){ $('status').innerHTML = msg ? (busy?'<span class="spin"></span>':'')+esc(msg) : ''; }
+function showErr(html){ $('errBox').innerHTML = `<div class="err">${html}</div>`; }
+function clearErr(){ $('errBox').innerHTML=''; }
+
+const glyph = (lvl) => SIG.levelGlyph[String(lvl)];
+const lvlLabel = (lvl) => SIG.levelLabels[lang][String(lvl)];
+const paramLabel = (p) => (lang==='id'?SIG.paramLabelsId:SIG.paramLabels)[p] ?? p;
+const sigName = (s) => lang==='id' && s.nameId ? s.nameId : s.name;
+
+function renderAnnunciator(d) {
+  const el = $('annunciator'); el.innerHTML = '';
+  for (const p of SIG.params) {
+    const o = d.obs[p];
+    const div = document.createElement('div');
+    if (!o) {
+      div.className = 'ann';
+      div.innerHTML = `<div class="tag">${p}</div><div class="glyph" style="color:var(--dim)">—</div><div class="dpct">n/a</div>`;
+    } else {
+      const tr = o.trend;
+      const cls = tr.level>0?'up':tr.level<0?'down':'';
+      const alarm = Math.abs(tr.level)===3?' alarm':'';
+      div.className = `ann ${cls}${alarm}`;
+      div.innerHTML =
+        `<div class="tag">${p} · ${esc(paramLabel(p))}</div>`+
+        `<div class="glyph">${glyph(tr.level)}</div>`+
+        `<div class="dpct">Δ ${tr.dPct>=0?'+':''}${tr.dPct.toFixed(1)}%${o.normalized?t().normMark(o.normalized):''}</div>`+
+        (o.signal?`<span class="sigch">${o.signal}</span>`:'');
+    }
+    el.appendChild(div);
+  }
+}
+
+function renderDiagnosis(d) {
+  const top = d.results[0], s = top.sig;
+  const confKey = top.pct>=75?'high':top.pct>=55?'med':'low';
+  const badges = [];
+  if (s.operator) badges.push(`<span class="badge warn">⚠ ${esc(t().operator)}</span>`);
+  if (d.trip)     badges.push(`<span class="badge trip">● ${esc(t().trip)}</span>`);
+  if (d.freqComp) badges.push(`<span class="badge">ƒ ${esc(t().freqComp(d.compParams.join(', ')))}</span>`);
+  badges.push(`<span class="badge">${esc(t().win(d.durH, t().pace[d.pace]))}</span>`);
+
+  $('diagTop').innerHTML =
+    `<div class="dt-id">${esc(s.id)} · ${esc(t().confL)}: ${esc(t().conf[confKey])}</div>`+
+    `<div class="dt-name">${esc(sigName(s))}</div>`+
+    `<div class="scorebar"><div class="bar"><i style="width:${top.pct}%"></i></div><div class="val">${top.pct}%</div></div>`+
+    `<div class="badges">${badges.join('')}</div>`;
+
+  $('cands').innerHTML = d.results.slice(1, 4).map(r =>
+    `<div class="cand"><span class="c-id">${esc(r.sig.id)}</span><span>${esc(sigName(r.sig))}</span>`+
+    (r.gated?`<span class="c-gate">⛔ ${r.rawPct}%→${r.pct}%</span>`:'')+
+    `<span class="c-pct">${r.pct}%</span></div>`).join('');
+
+  // kejujuran epistemik: jelaskan case tinggi yang tergating
+  const gatedHigh = d.results.filter(r => r.gated && r.rawPct >= d.results[0].pct).slice(0, 2);
+  $('gateNotes').innerHTML = gatedHigh.map(g => {
+    const why = g.sig.pace==='sudden'?t().whySudden:t().whyGradual;
+    return `<div class="note">ℹ ${esc(t().gatedTxt(g.sig.id, sigName(g.sig), g.rawPct, g.pct, why))}</div>`;
+  }).join('');
+}
+
+function renderEvidence(d) {
+  const top = d.results[0];
+  const cols = t().evidCols;
+  let html = `<tr><th>${cols[0]}</th><th>${cols[1]}</th><th>${cols[2]}</th><th>${cols[3]}</th></tr>`;
+  for (const e of top.evidence) {
+    if (e.param === 'Amps(signal)') {
+      html += `<tr><td class="p">Amps signal ${e.key?'🔑':''}</td><td>${esc(e.observed)}</td><td>${esc(e.expected)}</td><td class="ok">${t().evOk}</td></tr>`;
+      continue;
+    }
+    const o = d.obs[e.param];
+    const cls = e.match>=0.6?'ok':e.match>0?'part':'no';
+    const st = e.match>=0.6?t().evOk:e.match>0?t().evPart:t().evNo;
+    html += `<tr><td class="p">${esc(e.param)} ${e.key?'🔑':''}</td>`+
+      `<td>${lvlLabel(e.observed)} (Δ ${o.trend.dPct>=0?'+':''}${o.trend.dPct.toFixed(1)}%)</td>`+
+      `<td>${lvlLabel(e.expected)}</td><td class="${cls}">${st}</td></tr>`;
+  }
+  $('evidTable').innerHTML = html;
+
+  const missing = SIG.params.filter(p => !d.obs[p]);
+  if (missing.length) {
+    $('evidTable').insertAdjacentHTML('afterend', '');
+  }
+  $('narasi').innerHTML = `<b>${lang==='id'?'Interpretasi':'Interpretation'}:</b> ${esc(top.sig.narasi[lang])}`
+    + (missing.length?`<div class="note" style="margin-top:10px">${esc(t().missing(missing.join(', ')))}</div>`:'');
+  $('rekom').innerHTML = `<b>${lang==='id'?'Rekomendasi':'Recommendation'}:</b> ${esc(top.sig.rekomendasi[lang])}`;
+}
+
+// ---------- grafik (Chart.js small multiples, downsample tampilan) ----------
+function downsample(times, vals, target=1500) {
+  const n = times.length;
+  if (n <= target) return { t: Array.from(times), v: Array.from(vals) };
+  const bucket = Math.ceil(n / target);
+  const t2 = [], v2 = [];
+  for (let i = 0; i < n; i += bucket) {
+    const seg = [];
+    for (let j = i; j < Math.min(i + bucket, n); j++) if (Number.isFinite(vals[j])) seg.push(vals[j]);
+    t2.push(times[Math.min(i + Math.floor(bucket/2), n-1)]);
+    v2.push(seg.length ? seg.sort((a,b)=>a-b)[Math.floor(seg.length/2)] : NaN);  // median
+  }
+  return { t: t2, v: v2 };
+}
+
+const CHART_COLORS = ['#57C7FF','#FFB020','#B48CFF','#35D07F','#FF5A52','#FF9ED2','#8AE1DC','#E0C060','#9FB3C8'];
+
+let chartLayout = 'sep';   // 'sep' | 'comb'
+let pctMode = false;
+
+// watermark di dalam canvas — ikut terbawa saat grafik di-screenshot
+const WatermarkPlugin = {
+  id: 'espWatermark',
+  afterDraw(chart) {
+    const { ctx, chartArea } = chart;
+    if (!chartArea) return;
+    ctx.save();
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.fillStyle = 'rgba(122,140,160,0.45)';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('ssolihin99@gmail.com', chartArea.right - 6, chartArea.bottom - 4);
+    ctx.restore();
+  },
+};
+
+const zoomOpts = () => ({
+  zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+  pan: { enabled: true, mode: 'x' },
+});
+
+function baseScales() {
+  return {
+    x: { type: 'time', grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', maxTicksLimit: 8, font: { family: 'IBM Plex Mono', size: 10 } } },
+    y: { grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', font: { family: 'IBM Plex Mono', size: 10 } } },
+  };
+}
+
+function renderCharts() {
+  charts.forEach(c => c.destroy()); charts = [];
+  const holder = $('charts'); holder.innerHTML = '';
+  if (typeof Chart === 'undefined') {
+    holder.innerHTML = `<div class="note">⚠ Chart.js gagal dimuat dari CDN — grafik dilewati, diagnosa tetap valid. Periksa koneksi internet lalu refresh.</div>`;
+    return;
+  }
+  const picks = [...chipsOn];
+  if (!picks.length) return;
+
+  if (chartLayout === 'comb') {
+    // ---- MODE GABUNG: 1 grafik, semua parameter, opsi skala persentase ----
+    const cell = document.createElement('div');
+    cell.className = 'chart-cell tall';
+    const title = picks.map(p => esc(p)).join(' · ') + (pctMode ? ' — %' : '');
+    cell.innerHTML = `<div class="cc-title">${title}</div><canvas></canvas>`;
+    holder.appendChild(cell);
+
+    const datasets = picks.map((p, i) => {
+      const ds = downsample(viewGrid.times, viewGrid.series[p]);
+      let v = ds.v;
+      if (pctMode) {
+        const mx = Math.max(...v.filter(Number.isFinite).map(Math.abs));
+        v = mx ? v.map(x => x / mx * 100) : v.map(() => 0);
+      }
+      return {
+        label: p, data: ds.t.map((t, k) => ({ x: t, y: v[k] })),
+        borderColor: CHART_COLORS[i % CHART_COLORS.length],
+        borderWidth: 1.3, pointRadius: 0, spanGaps: true,
+      };
+    });
+    const scales = baseScales();
+    if (pctMode) { scales.y.min = 0; scales.y.max = 105; }
+    const c = new Chart(cell.querySelector('canvas'), {
+      type: 'line', data: { datasets }, plugins: [WatermarkPlugin],
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: true, labels: { color: '#D7E1EA', font: { family: 'IBM Plex Mono', size: 11 }, boxWidth: 18, boxHeight: 2 } },
+          tooltip: { callbacks: { title: (items) => new Date(items[0].parsed.x).toLocaleString() } },
+          zoom: zoomOpts(),
+        },
+        scales,
+      },
+    });
+    cell.querySelector('canvas').ondblclick = () => c.resetZoom();
+    charts.push(c);
+    return;
+  }
+
+  // ---- MODE TERPISAH: small multiples per parameter ----
+  picks.forEach((p, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'chart-cell';
+    cell.innerHTML = `<div class="cc-title">${esc(p)} · ${esc(paramLabel(p))} <span style="opacity:.6">← ${esc(sourceMap[p]??'')}</span></div><canvas></canvas>`;
+    holder.appendChild(cell);
+    const ds = downsample(viewGrid.times, viewGrid.series[p]);
+    const c = new Chart(cell.querySelector('canvas'), {
+      type: 'line', plugins: [WatermarkPlugin],
+      data: { labels: ds.t, datasets: [{ data: ds.v, borderColor: CHART_COLORS[i % CHART_COLORS.length],
+        borderWidth: 1.3, pointRadius: 0, spanGaps: true }] },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          title: (items) => new Date(items[0].parsed.x).toLocaleString() } },
+          zoom: zoomOpts() },
+        scales: {
+          x: { type: 'time', grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', maxTicksLimit: 8, font: { family: 'IBM Plex Mono', size: 10 } } },
+          y: { grid: { color: '#1A2430' }, ticks: { color: '#7A8CA0', font: { family: 'IBM Plex Mono', size: 10 } } },
+        },
+      },
+    });
+    cell.querySelector('canvas').ondblclick = () => c.resetZoom();
+    charts.push(c);
+  });
+}
+
+function renderChips() {
+  const el = $('paramChips'); el.innerHTML = '';
+  for (const p of Object.keys(grid.series)) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (chipsOn.has(p) ? ' on' : '');
+    b.textContent = p;
+    b.onclick = () => { chipsOn.has(p) ? chipsOn.delete(p) : chipsOn.add(p); renderChips(); renderCharts(); };
+    el.appendChild(b);
+  }
+}
+
+// ---------- CSV export (format pipeline CSV esp-diagnosa-app) ----------
+function exportCsv() {
+  const cols = Object.keys(viewGrid.series);
+  let out = 'time,' + cols.join(',') + '\n';
+  const n = viewGrid.times.length;
+  for (let i = 0; i < n; i++) {
+    const row = [new Date(viewGrid.times[i]).toISOString()];
+    for (const c of cols) { const v = viewGrid.series[c][i]; row.push(Number.isFinite(v) ? v : ''); }
+    out += row.join(',') + '\n';
+  }
+  const blob = new Blob([out], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'esp_canonical_data.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---------- alur utama ----------
+async function handleFile(file) {
+  clearErr();
+  $('dzFile').textContent = `${file.name} · ${(file.size/1048576).toFixed(1)} MB`;
+  try {
+    const buf = await file.arrayBuffer();
+    const tags = await parseH5(buf);
+    const canonSeries = buildCanonical(tags);
+    grid = buildGrid(canonSeries);
+    rawSeries = canonSeries;
+    if (!chipsOn.size) chipsOn = new Set(['Amps','dP','Pi','Freq'].filter(p => grid.series[p]));
+    rerun();
+  } catch (e) {
+    setStatus('');
+    showErr(`<b>${esc(t().errH5)}</b><br>${esc(e.message ?? e)}`);
+  }
+}
+
+function rerun() {
+  if (!grid) return;
+  setStatus(t().diagnosing, true);
+  viewGrid = sliceWindow(grid, $('winSel').value);
+  lastDiag = EspEngine.runDiagnosis(Array.from(viewGrid.times), viewGrid.series, SIG);
+  renderAnnunciator(lastDiag);
+  renderDiagnosis(lastDiag);
+  renderEvidence(lastDiag);
+  renderChips();
+  renderCharts();
+  $('results').classList.remove('hidden');
+  setStatus('');
+}
+
+// ---------- events ----------
+const dz = $('dropzone'), fi = $('fileInput');
+dz.onclick = () => fi.click();
+dz.onkeydown = (e) => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); fi.click(); } };
+fi.onchange = () => fi.files[0] && handleFile(fi.files[0]);
+['dragover','dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop', e => e.dataTransfer.files[0] && handleFile(e.dataTransfer.files[0]));
+$('winSel').onchange = rerun;
+$('btnCsv').onclick = exportCsv;
+
+function syncChartTools() {
+  $('layoutSep').classList.toggle('on', chartLayout==='sep');
+  $('layoutComb').classList.toggle('on', chartLayout==='comb');
+  $('layoutLabel').textContent = chartLayout==='sep' ? t().layoutSep : t().layoutComb;
+  $('zoomHint').textContent = t().zoomHint;
+  const pb = $('pctToggle');
+  pb.style.display = chartLayout==='comb' ? '' : 'none';
+  pb.textContent = pctMode ? t().pctOn : t().pctOff;
+  pb.classList.toggle('on', pctMode);
+}
+$('layoutSep').onclick = () => { chartLayout='sep'; syncChartTools(); renderCharts(); };
+$('layoutComb').onclick = () => { chartLayout='comb'; syncChartTools(); renderCharts(); };
+$('pctToggle').onclick = () => { pctMode=!pctMode; syncChartTools(); renderCharts(); };
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const k = el.dataset.i18n;
+    if (typeof I18N[lang][k] === 'string') el.textContent = I18N[lang][k];
+  });
+  const winSel = $('winSel');
+  winSel.options[0].textContent = t().winAll;
+  for (let i = 1; i < winSel.options.length; i++) winSel.options[i].textContent = t().winH(winSel.options[i].value);
+  $('langId').classList.toggle('on', lang==='id');
+  $('langEn').classList.toggle('on', lang==='en');
+  syncChartTools();
+  if (lastDiag) { renderAnnunciator(lastDiag); renderDiagnosis(lastDiag); renderEvidence(lastDiag); renderCharts(); }
+}
+$('langId').onclick = () => { lang='id'; applyLang(); };
+$('langEn').onclick = () => { lang='en'; applyLang(); };
+
+// ---------- init ----------
+await loadSig();
+applyLang();
+</script>
+</body>
+</html>
