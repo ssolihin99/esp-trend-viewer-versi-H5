@@ -8,9 +8,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsfive@0.3.10/dist/browser/hdf5.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script type="module">
+  // Load h5wasm (mendukung deflate/gzip compression yang dipakai file Instruct)
+  import h5wasm from "https://cdn.jsdelivr.net/npm/h5wasm@0.7.0/dist/esm/hdf5_hl.js";
+  window.h5wasmReady = h5wasm.ready.then(m => { window.h5wasm = h5wasm; window.h5wasmFS = m.FS; return h5wasm; });
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 <style>
 :root{
@@ -429,54 +433,119 @@ function applyLang(){
   if(FULLRES) refresh();
 }
 
-/* ---------- H5 file parsing (jsfive) ---------- */
-function parseH5(arrayBuffer, filename){
+/* ---------- H5 file parsing (h5wasm, mendukung deflate/gzip) ---------- */
+// Mapping nama parameter Instruct → nama pendek ESP standar
+const H5_NAME_MAP={
+  'DHIntakePressure':'Pi', 'DHDischargePressure':'Pd', 'DHDifferentialPressure':'dP',
+  'DHIntakeTemp':'Ti', 'DHMotorTemp':'Tm', 'DHDischargeTemperature':'Td',
+  'DHVibration':'Vib', 'DHVibrationAX1':'VibX', 'DHVibrationAY1':'VibY', 'DHVibrationAZ1':'VibZ',
+  'VsdAmps':'Amps', 'VsdMotAmps':'MotAmps', 'VsdFreqOut':'Freq',
+  'PIC1 Flow Live':'Q', 'VSD Volts Out':'Vout', 'VSD Volts In':'Vin',
+  'VSD Power In':'Pin', 'VSD Power Out':'Pout', 'VSDG7 Load':'Load',
+  'Casing Head Pressure':'CHP'
+};
+function h5shortName(rawName){
+  if(H5_NAME_MAP[rawName]) return H5_NAME_MAP[rawName];
+  // Bersihkan prefix path
+  const base=rawName.split('/').pop();
+  return H5_NAME_MAP[base] || base;
+}
+
+function walkH5(group, cb, path=''){
+  let keys=[];
+  try{ keys=group.keys(); }catch(e){ return; }
+  for(const key of keys){
+    let item;
+    try{ item=group.get(key); }catch(e){ continue; }
+    if(!item) continue;
+    const fullPath = path ? path+'/'+key : '/'+key;
+    // Dataset: punya .shape (array). Group: punya .keys (function)
+    if(typeof item.keys==='function'){ walkH5(item, cb, fullPath); }
+    else if(item.shape!==undefined){ cb(fullPath, key, item); }
+  }
+}
+
+async function parseH5(arrayBuffer, filename){
+  if(!window.h5wasmReady) throw new Error('H5 library masih dimuat, coba lagi sebentar…');
+  await window.h5wasmReady;
+  const h5=window.h5wasm, FS=window.h5wasmFS;
+  const tmpName='__upload__.h5';
+  FS.writeFile(tmpName, new Uint8Array(arrayBuffer));
+  let f;
   try{
-    const f = new hdf5.File(arrayBuffer, filename);
-    const datasets={};
-    
-    function walkGroup(group, path=''){
-      let keys=[];
-      try{ keys = group.keys || []; }catch(e){ keys=[]; }
-      for(const key of keys){
-        let item;
-        try{ item = group.get(key); }catch(e){ continue; }
-        if(!item) continue;
-        const fullPath = path ? path+'/'+key : key;
-        // Deteksi tipe: Dataset punya .shape/.dtype, Group punya .keys
-        const isGroup = (item.keys !== undefined && Array.isArray(item.keys));
-        const isDataset = (item.shape !== undefined || item.dtype !== undefined);
-        
-        if(isDataset && !isGroup){
-          try{
-            const val = item.value;
-            // hanya dataset numerik 1D (skip scalar & multi-dim)
-            if(val && val.length!==undefined && val.length>0 && typeof val[0]==='number'){
-              // gunakan nama key sederhana; kalau bentrok pakai full path
-              const name = datasets[key] ? fullPath.replace(/\//g,'_') : key;
-              datasets[name]={ data: Array.from(val), length: val.length };
-            }
-          }catch(e){}
-        }
-        else if(isGroup){
-          walkGroup(item, fullPath);
-        }
+    f=new h5.File(tmpName, 'r');
+    // Kumpulkan semua dataset numerik 1D. Untuk Non-Conforming Time Series,
+    // tiap parameter adalah group berisi 'value' (+ 'time') → ambil 'value'.
+    const params={};   // shortName → {value:[], time:[] }
+    const rawDatasets={}; // fallback: path → array
+
+    walkH5(f, (fullPath, key, ds)=>{
+      let val;
+      try{ val=ds.value; }catch(e){ return; }
+      if(!val || val.length===undefined || val.length===0) return;
+      // Konversi ke number array (skip non-numeric)
+      let arr;
+      if(typeof val[0]==='number'){ arr=Array.from(val); }
+      else if(typeof val[0]==='bigint'){ arr=Array.from(val, x=>Number(x)); }
+      else return;
+      rawDatasets[fullPath]={key, arr};
+    });
+
+    // Grouping: cari pola ".../<Param>/value" dan ".../<Param>/time"
+    const groups={};
+    for(const path in rawDatasets){
+      const m=path.match(/^(.*)\/(value|time|Value|Time)$/);
+      if(m){
+        const parent=m[1], kind=m[2].toLowerCase();
+        (groups[parent]=groups[parent]||{})[kind]=rawDatasets[path].arr;
       }
     }
-    walkGroup(f);
-    
-    const names=Object.keys(datasets);
-    if(names.length<2) throw new Error('No numeric datasets found in H5 file (found '+names.length+')');
-    
-    const maxLen=Math.max(...names.map(k=>datasets[k].length));
-    const data=[];
+
+    let fields=[], columns={};
+    if(Object.keys(groups).length>=2){
+      // Struktur time-series (Non-Conforming): pakai value per parameter
+      for(const parent in groups){
+        const g=groups[parent];
+        if(!g.value || g.value.length<3) continue;  // skip yang terlalu pendek
+        const rawName=parent.split('/').pop();
+        let name=h5shortName(rawName);
+        // hindari duplikat nama
+        if(columns[name]) name=rawName;
+        columns[name]=g.value;
+        fields.push(name);
+      }
+    }
+    // Fallback: kalau grouping value/time tidak menghasilkan cukup kolom,
+    // ambil semua dataset numerik 1D yang cukup panjang (>=5 titik)
+    if(fields.length<2){
+      fields=[]; columns={};
+      for(const path in rawDatasets){
+        const arr=rawDatasets[path].arr;
+        if(arr.length<5) continue;
+        // skip dataset 'time' murni (biasanya monoton naik & besar)
+        const rawName=rawDatasets[path].key;
+        if(/^time$/i.test(rawName)) continue;
+        let name=h5shortName(rawName);
+        if(columns[name]) name=path.replace(/^\//,'').replace(/\//g,'_');
+        columns[name]=arr;
+        fields.push(name);
+      }
+    }
+
+    if(fields.length<2) throw new Error('No numeric datasets found in H5 file (found '+fields.length+')');
+
+    const maxLen=Math.max(...fields.map(k=>columns[k].length));
+    const rows=[];
     for(let i=0;i<maxLen;i++){
       const row={};
-      for(const k of names){ const v=datasets[k].data[i]; row[k]=(v!==undefined)?v:NaN; }
-      data.push(row);
+      for(const k of fields){ const v=columns[k][i]; row[k]=(v!==undefined && v!==null)?v:NaN; }
+      rows.push(row);
     }
-    return {data, fields:names};
-  }catch(e){ throw new Error('H5 parse error: '+e.message); }
+    return {data:rows, fields};
+  } finally {
+    try{ if(f) f.close(); }catch(e){}
+    try{ FS.unlink(tmpName); }catch(e){}
+  }
 }
 
 /* ---------- file handling ---------- */
@@ -510,12 +579,14 @@ function handleCSVFile(f){
 function handleH5File(f){
   const reader=new FileReader();
   reader.onerror=()=>showErr(t('errRead'));
-  reader.onload=()=>{
+  reader.onload=async ()=>{
     try{
-      const parsed=parseH5(reader.result, f.name);
+      document.getElementById('status').innerHTML=`<b>${f.name}</b> · parsing H5…`;
+      const parsed=await parseH5(reader.result, f.name);
       if(!parsed.data.length) throw new Error(t('errEmpty'));
       const res=buildSeries(parsed.data,parsed.fields,'h5',false);
       if(!res.stats.length) throw new Error('No numeric columns found in H5 file');
+      document.getElementById('status').innerHTML=`<b>${f.name}</b>`;
       showResult(res);
     }catch(e){ showErr(e.message); }
   };
