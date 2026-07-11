@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/h5wasm@0.7.0/dist/h5wasm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsfive@0.3.10/dist/browser/hdf5.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
@@ -429,35 +429,53 @@ function applyLang(){
   if(FULLRES) refresh();
 }
 
-/* ---------- H5 file parsing ---------- */
-async function parseH5(arrayBuffer){
+/* ---------- H5 file parsing (jsfive) ---------- */
+function parseH5(arrayBuffer, filename){
   try{
-    const h5 = new hicl.h5wasm.HDF5(new Uint8Array(arrayBuffer));
-    const datasets={}; const times=[];
+    const f = new hdf5.File(arrayBuffer, filename);
+    const datasets={};
     
     function walkGroup(group, path=''){
-      try{
-        const keys=Object.keys(group);
-        for(const key of keys){
-          const item=group[key];
-          const fullPath=path+'/'+key;
-          if(item instanceof hicl.h5wasm.Dataset){
-            try{
-              const data=item.slice(); const typed=new Float64Array(data.buffer);
-              if(typed.length>0){ datasets[key]={data:Array.from(typed), length:typed.length}; }
-            }catch(e){}
-          }else if(item instanceof hicl.h5wasm.Group){ walkGroup(item, fullPath); }
+      let keys=[];
+      try{ keys = group.keys || []; }catch(e){ keys=[]; }
+      for(const key of keys){
+        let item;
+        try{ item = group.get(key); }catch(e){ continue; }
+        if(!item) continue;
+        const fullPath = path ? path+'/'+key : key;
+        // Deteksi tipe: Dataset punya .shape/.dtype, Group punya .keys
+        const isGroup = (item.keys !== undefined && Array.isArray(item.keys));
+        const isDataset = (item.shape !== undefined || item.dtype !== undefined);
+        
+        if(isDataset && !isGroup){
+          try{
+            const val = item.value;
+            // hanya dataset numerik 1D (skip scalar & multi-dim)
+            if(val && val.length!==undefined && val.length>0 && typeof val[0]==='number'){
+              // gunakan nama key sederhana; kalau bentrok pakai full path
+              const name = datasets[key] ? fullPath.replace(/\//g,'_') : key;
+              datasets[name]={ data: Array.from(val), length: val.length };
+            }
+          }catch(e){}
         }
-      }catch(e){}
+        else if(isGroup){
+          walkGroup(item, fullPath);
+        }
+      }
     }
-    walkGroup(h5);
+    walkGroup(f);
     
-    if(Object.keys(datasets).length<2) throw new Error('No numeric datasets found in H5 file');
-    const maxLen=Math.max(...Object.values(datasets).map(d=>d.length));
-    const data=[]; for(let i=0;i<maxLen;i++){
-      const row={}; for(const k in datasets){ row[k]=datasets[k].data[i]||NaN; } data.push(row);
+    const names=Object.keys(datasets);
+    if(names.length<2) throw new Error('No numeric datasets found in H5 file (found '+names.length+')');
+    
+    const maxLen=Math.max(...names.map(k=>datasets[k].length));
+    const data=[];
+    for(let i=0;i<maxLen;i++){
+      const row={};
+      for(const k of names){ const v=datasets[k].data[i]; row[k]=(v!==undefined)?v:NaN; }
+      data.push(row);
     }
-    return {data, fields:Object.keys(datasets)};
+    return {data, fields:names};
   }catch(e){ throw new Error('H5 parse error: '+e.message); }
 }
 
@@ -492,9 +510,9 @@ function handleCSVFile(f){
 function handleH5File(f){
   const reader=new FileReader();
   reader.onerror=()=>showErr(t('errRead'));
-  reader.onload=async ()=>{
+  reader.onload=()=>{
     try{
-      const parsed=await parseH5(reader.result);
+      const parsed=parseH5(reader.result, f.name);
       if(!parsed.data.length) throw new Error(t('errEmpty'));
       const res=buildSeries(parsed.data,parsed.fields,'h5',false);
       if(!res.stats.length) throw new Error('No numeric columns found in H5 file');
