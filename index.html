@@ -660,5 +660,37 @@ try{ const s=localStorage.getItem('espv_lang'); if(s==='en'||s==='id')LANG=s;
   else if((navigator.language||'').toLowerCase().startsWith('id'))LANG='id'; }catch(_){}
 applyLang();
 </script>
+
+<script>
+(function () {
+  var ENDPOINT = 'https://script.google.com/macros/s/AKfycbyyxT5Mys1YMzn5KiP7YwSw68F00Ffyxa5zWe94t92g55CcoVw70zzcgZMLJEAnReVp/exec';
+  var APP = 'esp-trend-viwer-h5';   // <-- ganti per repo
+
+  function sid() {
+    var s = sessionStorage.getItem('_esp_sid');
+    if (!s) {
+      s = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem('_esp_sid', s);
+    }
+    return s;
+  }
+
+  function hit(ev) {
+    var q = '?app='  + encodeURIComponent(APP)
+          + '&page=' + encodeURIComponent(location.pathname)
+          + '&ref='  + encodeURIComponent(document.referrer || '')
+          + '&lang=' + encodeURIComponent(navigator.language || '')
+          + '&scr='  + screen.width + 'x' + screen.height
+          + '&ssid=' + sid()
+          + '&ev='   + encodeURIComponent(ev)
+          + '&_='    + Date.now();
+    new Image().src = ENDPOINT + q;
+  }
+
+  hit('pageview');
+  window.espTrack = hit;
+})();
+</script>
+  
 </body>
 </html>
